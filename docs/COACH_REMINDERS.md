@@ -2,7 +2,7 @@
 
 ## 入口与行为
 
-- 首页对话、侧边栏、提醒页面展示虚拟 AI 教练头像。默认昵称“林教练”，可以修改。
+- 首页对话、侧边栏、提醒页面展示所选虚拟 AI 教练。默认阿衡，另有小燃、阿策、棉棉；支持桌宠动画与独立性格提示词，见 `COACH_PERSONAS.md`。当前昵称可以修改。
 - 在“我→私教提醒”或侧边栏“私教提醒”中，选择训练星期、训练开始时间和提前提醒分钟数；到点训练与提前准备是两种独立循环提醒。提前时间为0时只安排到点提醒。
 - 开启饮食提醒后，可以单独选择早餐、午餐和晚餐，修改每餐时间。三餐按天重复；不会因为未记录就推断用户没吃饭。
 - 所有时间明确采用 `Asia/Shanghai` 北京时间，不跟随设备时区自动漂移。训练前提醒跨午夜时会正确移到前一日。
@@ -29,7 +29,7 @@ Web：每15秒检查当前分钟，页面处于前台时显示带教练头像的
 
 ## 文件与接口
 
-- 原创教练资产：`mobile/assets/coach/liftlab_coach.png`，静态虚拟角色插画，不是动作教学素材。
+- 当前桌宠形象与动画：`mobile/lib/coaches/coach_pet.dart`；原静态 PNG 已作为旧版设计保留，不再打包或显示。
 - 角色组件：`mobile/lib/coach_avatar.dart`。
 - 提醒计算：`mobile/lib/reminders/reminder_settings.dart`。
 - 本地存储、通知安排与网页提醒：`mobile/lib/reminders/coach_reminders.dart`。
@@ -37,9 +37,9 @@ Web：每15秒检查当前分钟，页面处于前台时显示带教练头像的
 - 服务端设置：`backend/reminders.py`，`GET/PUT /api/coach/reminders`，SQLite `coach_reminders`。
 - 通知权限/重启接收器：`mobile/android/app/src/main/AndroidManifest.xml`。
 
-## 形象生成记录
+## 旧版静态形象生成记录
 
-使用内置 image_gen 工具生成，原始文件复制进工作区后以 Flutter 资产打包。没有使用 API/CLI 备用路径，也不依赖项目模型密钥。实际生成提示词如下：
+旧版 PNG 使用内置 image_gen 工具生成。当前四位桌宠已改用代码矢量动画；以下仅保留旧版设计的生成记录：
 
 ```text
 Create one polished original virtual fitness coach character avatar for the LiftLab mobile app. Stylized 3D illustration, friendly approachable adult Asian coach, short dark hair, natural athletic build, wearing a plain forest green training T-shirt matching #244b3c, small warm smile, one hand giving an encouraging thumbs-up. Waist-up portrait facing the viewer, centered composition, entire head and hands visible with comfortable margins. Soft studio lighting, modern calm fitness companion aesthetic. Plain warm ivory background matching #f5f5ef. No words, no logos, no watermarks, no medical equipment, no exaggerated bodybuilding physique. This is a fictional AI character, not a real-person portrait. Deliver a square image suited to both a small circular chat avatar and a larger coach introduction card.

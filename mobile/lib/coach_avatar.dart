@@ -1,21 +1,17 @@
 import 'package:flutter/material.dart';
 
-class CoachAvatar extends StatelessWidget {
-  const CoachAvatar({super.key, this.size = 40});
-  final double size;
+import 'coaches/coach_pet.dart';
 
+class CoachAvatar extends StatelessWidget {
+  const CoachAvatar({super.key, this.size = 40, this.coachId = 'steady'});
+  final double size;
+  final String coachId;
   @override
-  Widget build(BuildContext context) => Semantics(
-    label: '虚拟 AI 健身教练形象',
-    image: true,
-    child: ClipOval(
-      child: Image.asset(
-        'assets/coach/liftlab_coach.png',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        excludeFromSemantics: true,
-      ),
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: FittedBox(
+      child: CoachPet(coachId: coachId, size: size, animate: false),
     ),
   );
 }

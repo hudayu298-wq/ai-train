@@ -127,6 +127,60 @@ def test_reminder_preferences_update_schedule_and_keep_other_facts():
     client.put('/api/coach/reminders', json={**settings, 'training_enabled': False})
     assert client.get('/api/profile').json()['days'] == 2
 
+def test_four_coaches_have_independent_prompts_and_persisted_identity(monkeypatch):
+    items = client.get('/api/coach/personas').json()['items']
+    assert {p['id'] for p in items} == {'steady', 'energetic', 'analytical', 'gentle'}
+    prompts = [client.get('/api/coach/prompt', params={'coach_id': p['id']}).json() for p in items]
+    assert len({p['personality_prompt'] for p in prompts}) == 4
+    assert all('用户画像记录规则' in p['prompt'] for p in prompts)
+    for persona, prompt in zip(items, prompts):
+        assert persona['name'] in prompt['personality_prompt']
+        assert prompt['coach']['id'] == persona['id']
+    assert client.get('/api/coach/prompt?coach_id=unknown').status_code == 422
+    captured = []
+    async def fake(message, history, profile, context):
+        captured.append(context['coach_persona'])
+        return {'reply': '具体建议', 'profile_updates': []}, 'test-model'
+    monkeypatch.setattr(module.coach, 'respond', fake)
+    first = client.post('/api/coach/messages', json={'request_id': 'persona-0001', 'message': '聊聊训练',
+                        'coach_id': 'energetic'})
+    assert first.status_code == 200
+    assert first.json()['coach_name'] == '小燃'
+    assert first.json()['coach_id'] == 'energetic'
+    assert captured[0]['id'] == 'energetic'
+    settings = client.get('/api/coach/reminders').json()
+    settings.pop('updated_at', None)
+    settings.update(coach_id='gentle', coach_name='棉棉')
+    assert client.put('/api/coach/reminders', json=settings).status_code == 200
+    second = client.post('/api/coach/messages', json={'request_id': 'persona-0002', 'message': '聊聊饮食'})
+    assert second.json()['coach_id'] == 'gentle'
+    history = client.get('/api/coach/messages').json()['turns']
+    assert [t['coach_name'] for t in history] == ['小燃', '棉棉']
+    assert client.post('/api/coach/messages', json={'request_id': 'persona-0001', 'message': '聊聊训练',
+                        'coach_id': 'gentle'}).status_code == 409
+    assert client.put('/api/coach/reminders', json={**settings, 'coach_id': 'fake'}).status_code == 422
+
+@pytest.mark.parametrize('coach_id', ['steady', 'energetic', 'analytical', 'gentle'])
+def test_model_request_contains_selected_coach_prompt(monkeypatch, coach_id):
+    import json
+    import httpx
+    monkeypatch.setattr(module.ai_planner, 'settings', lambda: {
+        'AI_API_KEY': 'secret', 'AI_BASE_URL': 'https://model.example/v1', 'AI_MODEL': 'test-model'})
+    def handler(request):
+        body = json.loads(request.content)
+        prompt = body['messages'][0]['content']
+        assert module.coach.coaches.PERSONALITY_PROMPTS[coach_id] in prompt
+        assert '用户画像记录规则' in prompt
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
+            'content': json.dumps({'reply': '建议', 'profile_updates': []})}}]})
+    original = httpx.AsyncClient
+    monkeypatch.setattr(module.ai_planner.httpx, 'AsyncClient',
+        lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    result = client.post('/api/coach/messages', json={'request_id': f'prompt-{coach_id}',
+        'message': '我想聊训练', 'coach_id': coach_id})
+    assert result.status_code == 200
+    assert result.json()['coach_id'] == coach_id
+
 @pytest.mark.parametrize('invalid', [
     {'training_enabled': True, 'training_days': []},
     {'training_days': [1, 1]}, {'training_days': [8]},

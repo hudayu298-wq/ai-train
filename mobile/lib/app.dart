@@ -14,6 +14,8 @@ import 'coach_avatar.dart';
 import 'reminders/coach_reminders.dart';
 import 'reminders/reminder_page.dart';
 import 'reminders/reminder_settings.dart';
+import 'coaches/coach_picker.dart';
+import 'coaches/coach_persona.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -51,6 +53,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Map<String, dynamic>? nutrition;
   Map<String, dynamic>? coachProfile;
   int chatRefreshToken = 0;
+  int petReminderRevision = 0;
+  String? petReminderText;
   Timer? nutritionTimer;
   final coachReminders = CoachReminders();
   String mealType = 'breakfast';
@@ -86,12 +90,16 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     coachReminders.onOpen = openReminderDestination;
     coachReminders.onForegroundReminder = (event) {
       if (!mounted) return;
+      setState(() {
+        petReminderRevision++;
+        petReminderText = event.body;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 12),
           content: Row(
             children: [
-              const CoachAvatar(size: 40),
+              CoachAvatar(size: 40, coachId: coachReminders.settings.coachId),
               const SizedBox(width: 12),
               Expanded(child: Text('${event.title}\n${event.body}')),
             ],
@@ -489,7 +497,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Widget profilePage() => panel('我的用户画像', [
     ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const CoachAvatar(size: 48),
+      leading: CoachAvatar(size: 48, coachId: coachReminders.settings.coachId),
       title: Text('${coachReminders.settings.coachName} · 私教提醒'),
       subtitle: const Text('设置训练日、训练时间和用餐提醒'),
       trailing: const Icon(Icons.chevron_right),
@@ -844,13 +852,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     setState(() => tab = destination);
   }
 
-  Future<void> showCoachPrompt() => perform(() async {
-    final result = await request('/coach/prompt');
+  Future<void> showCoachPrompt({String? coachId}) => perform(() async {
+    final result = await request(
+      '/coach/prompt?coach_id=${coachId ?? coachReminders.settings.coachId}',
+    );
     if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('AI 私教提示词'),
+        title: Text('${result['coach']['name']} · 性格与私教提示词'),
         content: SizedBox(
           width: 640,
           child: SingleChildScrollView(child: SelectableText(result['prompt'])),
@@ -865,11 +875,52 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     );
   });
 
+  Future<void> chooseCoach() async {
+    await coachReminders.initialize();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * .86,
+        ),
+        child: CoachPicker(
+          selectedId: coachReminders.settings.coachId,
+          onPrompt: (id) => showCoachPrompt(coachId: id),
+          onSelect: (CoachPersona persona) async {
+            final config = coachReminders.settings.copy();
+            if (config.coachId != persona.id) {
+              config.coachId = persona.id;
+              config.coachName = persona.name;
+            }
+            await coachReminders.save(config, askPermission: false);
+            String? syncError;
+            try {
+              await syncReminderSettings(config);
+            } catch (e) {
+              syncError = '已在本机切换教练；服务器同步失败，请连接后保存设置重试。';
+            }
+            if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+            if (mounted && syncError != null) notify(syncError);
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(pageTitles[tab]),
       actions: [
+        IconButton(
+          onPressed: chooseCoach,
+          tooltip: '切换桌宠教练',
+          icon: const Icon(Icons.groups_outlined),
+        ),
         if (tab != 0)
           IconButton(
             onPressed: () => openLibrary(
@@ -894,7 +945,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CoachAvatar(size: 72),
+                  CoachAvatar(
+                    size: 72,
+                    coachId: coachReminders.settings.coachId,
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'LiftLab',
@@ -953,12 +1007,19 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           child: IndexedStack(
             index: tab,
             children: [
-              CoachChat(
-                request: (path, method, body) =>
-                    request(path, method: method, body: body),
-                onProfileChanged: profileFromChat,
-                refreshToken: chatRefreshToken,
-                coachName: coachReminders.settings.coachName,
+              TickerMode(
+                enabled: tab == 0,
+                child: CoachChat(
+                  request: (path, method, body) =>
+                      request(path, method: method, body: body),
+                  onProfileChanged: profileFromChat,
+                  refreshToken: chatRefreshToken,
+                  coachName: coachReminders.settings.coachName,
+                  coachId: coachReminders.settings.coachId,
+                  onChooseCoach: chooseCoach,
+                  reminderText: petReminderText,
+                  reminderRevision: petReminderRevision,
+                ),
               ),
               for (final page in [
                 profilePage,
@@ -985,6 +1046,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                     child: ReminderPage(
                       service: coachReminders,
                       sync: syncReminderSettings,
+                      onChooseCoach: chooseCoach,
                       readSaved: () async => ReminderSettings.fromJson(
                         Map<String, dynamic>.from(
                           await request('/coach/reminders'),

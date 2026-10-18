@@ -386,7 +386,7 @@ def coach_context(message):
     with connection() as db:
         reminder_settings = reminders.preferences(db)
     return {
-        'coach_persona': {'coach_name': reminder_settings['coach_name'], 'virtual_character': True},
+        'coach_persona': {'id': reminder_settings['coach_id'], 'coach_name': reminder_settings['coach_name'], 'virtual_character': True},
         'reminder_settings': reminder_settings,
         'today': nutrition_today().isoformat(),
         'nutrition': nutrition_summary(), 'rm': get_rm(),

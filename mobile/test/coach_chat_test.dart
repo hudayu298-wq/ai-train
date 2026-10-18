@@ -110,8 +110,12 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final sent = <Map<String, dynamic>>[];
     await http.runWithClient(
       () async {
         await tester.pumpWidget(const LiftLab());
@@ -127,6 +131,20 @@ void main() {
           expect(find.widgetWithText(AppBar, item), findsOneWidget);
           expect(tester.takeException(), isNull);
         }
+        await tester.tap(find.byTooltip('切换桌宠教练'));
+        await tester.pumpAndSettle();
+        final choose = find.text('选择小燃');
+        await tester.ensureVisible(choose);
+        await tester.pumpAndSettle();
+        await tester.tap(choose);
+        await tester.pumpAndSettle();
+        expect(find.text('小燃 · AI 私教'), findsWidgets);
+        await tester.enterText(find.byType(TextField), '你好');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('发送消息'));
+        await tester.pumpAndSettle();
+        expect(sent.single['coach_id'], 'energetic');
+        expect(sent.single['coach_name'], '小燃');
         await tester.pumpWidget(
           const SizedBox(),
         ); // Dispose periodic nutrition timer.
@@ -158,7 +176,20 @@ void main() {
               'labels': {'age': '年龄'},
             };
           case '/api/coach/messages':
-            body = {'turns': []};
+            if (request.method == 'POST') {
+              final input = Map<String, dynamic>.from(jsonDecode(request.body));
+              sent.add(input);
+              body = {
+                'request_id': input['request_id'],
+                'user_message': input['message'],
+                'reply': '先从一个小目标开始。',
+                'profile_changes': [],
+                'coach_id': input['coach_id'],
+                'coach_name': input['coach_name'],
+              };
+            } else {
+              body = {'turns': []};
+            }
           case '/api/coach/status':
             body = {'configured': false};
           case '/api/nutrition/today':

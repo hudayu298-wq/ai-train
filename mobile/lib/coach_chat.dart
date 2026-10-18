@@ -3,6 +3,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'coach_avatar.dart';
+import 'coaches/coach_pet.dart';
+import 'coaches/coach_persona.dart';
+
+import 'dart:async';
 
 class CoachChat extends StatefulWidget {
   const CoachChat({
@@ -10,12 +14,20 @@ class CoachChat extends StatefulWidget {
     required this.request,
     required this.onProfileChanged,
     this.refreshToken = 0,
-    this.coachName = '林教练',
+    this.coachName = '阿衡',
+    this.coachId = 'steady',
+    this.onChooseCoach,
+    this.reminderText,
+    this.reminderRevision = 0,
   });
   final Future<dynamic> Function(String, String, Object?) request;
   final Future<void> Function() onProfileChanged;
   final int refreshToken;
   final String coachName;
+  final String coachId;
+  final VoidCallback? onChooseCoach;
+  final String? reminderText;
+  final int reminderRevision;
 
   static String displayValue(dynamic value) => switch (value) {
     'male' => '男性',
@@ -38,6 +50,9 @@ class _CoachChatState extends State<CoachChat> {
   bool loading = true, sending = false;
   bool? configured;
   String? error, retryId, retryMessage;
+  Timer? petReaction;
+  PetMood petMood = PetMood.idle;
+  String? petMessage;
 
   @override
   void initState() {
@@ -49,12 +64,26 @@ class _CoachChatState extends State<CoachChat> {
   void didUpdateWidget(covariant CoachChat oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshToken != widget.refreshToken && !sending) load();
+    if (oldWidget.coachId != widget.coachId ||
+        oldWidget.coachName != widget.coachName) {
+      retryId = null;
+      if (!sending) retryMessage = null;
+      petMessage = null;
+      petMood = PetMood.idle;
+    }
+    if (widget.reminderRevision != oldWidget.reminderRevision) {
+      react(
+        PetMood.reminding,
+        widget.reminderText ?? personaFor(widget.coachId).tapLine,
+      );
+    }
   }
 
   @override
   void dispose() {
     composer.dispose();
     scroll.dispose();
+    petReaction?.cancel();
     super.dispose();
   }
 
@@ -115,6 +144,8 @@ class _CoachChatState extends State<CoachChat> {
         await widget.request('/coach/messages', 'POST', {
           'message': message,
           'request_id': requestId,
+          'coach_id': widget.coachId,
+          'coach_name': widget.coachName,
         }),
       );
       if (!mounted) return;
@@ -126,11 +157,15 @@ class _CoachChatState extends State<CoachChat> {
         configured = true;
       });
       scrollToLatest();
+      react(PetMood.cheering, personaFor(widget.coachId).replyLine);
       if ((result['profile_changes'] as List).isNotEmpty) {
         await widget.onProfileChanged();
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) {
+        setState(() => error = '$e');
+        react(PetMood.worried, '这次没有连接好，可以稍后重试。');
+      }
     } finally {
       if (mounted) {
         setState(() => sending = false);
@@ -139,7 +174,30 @@ class _CoachChatState extends State<CoachChat> {
     }
   }
 
-  Widget bubble(String text, {bool user = false, Widget? footer}) => Align(
+  void react(PetMood mood, String message) {
+    if (widget.onChooseCoach == null) return;
+    petReaction?.cancel();
+    setState(() {
+      petMood = mood;
+      petMessage = message;
+    });
+    petReaction = Timer(const Duration(seconds: 6), () {
+      if (mounted) {
+        setState(() {
+          petMood = PetMood.idle;
+          petMessage = null;
+        });
+      }
+    });
+  }
+
+  Widget bubble(
+    String text, {
+    bool user = false,
+    Widget? footer,
+    String? coachId,
+    String? coachName,
+  }) => Align(
     alignment: user ? Alignment.centerRight : Alignment.centerLeft,
     child: Container(
       constraints: const BoxConstraints(maxWidth: 620),
@@ -156,12 +214,12 @@ class _CoachChatState extends State<CoachChat> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (!user) ...[
-                const CoachAvatar(size: 36),
+                CoachAvatar(size: 36, coachId: coachId ?? widget.coachId),
                 const SizedBox(width: 10),
               ],
               Flexible(
                 child: Text(
-                  user ? '你' : '${widget.coachName} · AI 私教',
+                  user ? '你' : '${coachName ?? widget.coachName} · AI 私教',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: user ? Colors.white70 : const Color(0xff537164),
@@ -211,50 +269,76 @@ class _CoachChatState extends State<CoachChat> {
   Widget build(BuildContext context) => Column(
     children: [
       Expanded(
-        child: ListView(
-          controller: scroll,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Stack(
           children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 780),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    bubble(
-                      '你好，我是你的 AI 私教${widget.coachName}。你可以聊训练目标、饮食或训练中的困惑。\n先告诉我：你目前最想达成什么目标？',
-                      footer: const Text(
-                        '你明确提供的画像信息会自动记录；对话及相关健身资料会发送到已配置的 AI 服务。',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xff64786d),
+            ListView(
+              controller: scroll,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                16,
+                20,
+                widget.onChooseCoach == null ? 12 : 170,
+              ),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 780),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        bubble(
+                          personaFor(widget.coachId).greeting.replaceFirst(
+                            personaFor(widget.coachId).name,
+                            widget.coachName,
+                          ),
+                          footer: const Text(
+                            '你明确提供的画像信息会自动记录；对话及相关健身资料会发送到已配置的 AI 服务。',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xff64786d),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (configured == false)
+                          bubble(
+                            '私教模型尚未配置。请在电脑后端的 .env 中填写 AI_API_KEY、AI_BASE_URL 和 AI_MODEL，配置后即可开始对话。',
+                          ),
+                        for (final turn in turns) ...[
+                          bubble(turn['user_message'], user: true),
+                          bubble(
+                            turn['reply'],
+                            coachId: turn['coach_id'] ?? 'steady',
+                            coachName: turn['coach_name'] ?? '先前教练',
+                            footer: (turn['profile_changes'] as List).isEmpty
+                                ? null
+                                : changes(turn['profile_changes']),
+                          ),
+                        ],
+                        if (sending && retryMessage != null) ...[
+                          bubble(retryMessage!, user: true),
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('私教正在回复…'),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (configured == false)
-                      bubble(
-                        '私教模型尚未配置。请在电脑后端的 .env 中填写 AI_API_KEY、AI_BASE_URL 和 AI_MODEL，配置后即可开始对话。',
-                      ),
-                    for (final turn in turns) ...[
-                      bubble(turn['user_message'], user: true),
-                      bubble(
-                        turn['reply'],
-                        footer: (turn['profile_changes'] as List).isEmpty
-                            ? null
-                            : changes(turn['profile_changes']),
-                      ),
-                    ],
-                    if (sending && retryMessage != null) ...[
-                      bubble(retryMessage!, user: true),
-                      const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('私教正在回复…'),
-                      ),
-                    ],
-                  ],
+                  ),
+                ),
+              ],
+            ),
+            if (widget.onChooseCoach != null)
+              Positioned.fill(
+                child: CoachPetOverlay(
+                  coachId: widget.coachId,
+                  name: widget.coachName,
+                  onChoose: widget.onChooseCoach!,
+                  mood: sending ? PetMood.thinking : petMood,
+                  message: sending
+                      ? personaFor(widget.coachId).thinkingLine
+                      : petMessage,
                 ),
               ),
-            ),
           ],
         ),
       ),

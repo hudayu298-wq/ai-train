@@ -10,10 +10,12 @@ class ReminderPage extends StatefulWidget {
     required this.service,
     required this.sync,
     this.readSaved,
+    this.onChooseCoach,
   });
   final CoachReminders service;
   final Future<void> Function(ReminderSettings) sync;
   final Future<ReminderSettings> Function()? readSaved;
+  final VoidCallback? onChooseCoach;
 
   @override
   State<ReminderPage> createState() => _ReminderPageState();
@@ -28,6 +30,7 @@ class _ReminderPageState extends State<ReminderPage> {
   @override
   void initState() {
     super.initState();
+    widget.service.addListener(updatePersona);
     widget.service.initialize().then((_) {
       if (!mounted) return;
       setState(() {
@@ -40,8 +43,22 @@ class _ReminderPageState extends State<ReminderPage> {
 
   @override
   void dispose() {
+    widget.service.removeListener(updatePersona);
     name.dispose();
     super.dispose();
+  }
+
+  void updatePersona() {
+    if (!mounted ||
+        !loaded ||
+        draft.coachId == widget.service.settings.coachId) {
+      return;
+    }
+    setState(() {
+      draft.coachId = widget.service.settings.coachId;
+      draft.coachName = widget.service.settings.coachName;
+      name.text = draft.coachName;
+    });
   }
 
   Future<void> time(String current, void Function(String) update) async {
@@ -136,7 +153,7 @@ class _ReminderPageState extends State<ReminderPage> {
         card('你的虚拟私教', [
           Row(
             children: [
-              const CoachAvatar(size: 88),
+              CoachAvatar(size: 88, coachId: draft.coachId),
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
@@ -147,6 +164,12 @@ class _ReminderPageState extends State<ReminderPage> {
             ],
           ),
           const SizedBox(height: 16),
+          if (widget.onChooseCoach != null)
+            OutlinedButton.icon(
+              onPressed: busy ? null : widget.onChooseCoach,
+              icon: const Icon(Icons.groups_outlined),
+              label: const Text('切换教练与性格'),
+            ),
           TextField(
             controller: name,
             maxLength: 16,
