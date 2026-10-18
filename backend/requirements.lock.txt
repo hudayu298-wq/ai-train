@@ -17,6 +17,7 @@ pydantic==2.14.0
 pydantic_core==2.50.0
 Pygments==2.21.0
 pytest==8.4.2
+python-dotenv==1.2.4
 python-multipart==0.0.32
 starlette==1.7.0
 typing-inspection==0.4.4

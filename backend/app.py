@@ -11,8 +11,12 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
+try:
+    from . import ai_planner
+except ImportError:
+    import ai_planner
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -103,7 +107,7 @@ class RMRecord(BaseModel):
 
 class PlanExercise(BaseModel):
     exercise_id: Literal['bench', 'squat', 'deadlift']
-    weight_kg: float = Field(gt=0, le=500)
+    weight_kg: float | None = Field(gt=0, le=500)
     sets: int = Field(ge=1, le=20)
     reps: int = Field(ge=1, le=100)
     rest_seconds: int = Field(ge=0, le=1800)
@@ -115,6 +119,16 @@ class PlanDay(BaseModel):
 class UserPlan(BaseModel):
     name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
     days: list[PlanDay] = Field(min_length=1, max_length=7)
+    generation_id: str | None = None
+
+class AIPlan(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str = Field(min_length=1, max_length=80)
+    days: list[PlanDay] = Field(min_length=1, max_length=7)
+    rationale: str = Field(min_length=1, max_length=1500)
+    warmup: str = Field(min_length=1, max_length=1000)
+    recovery: str = Field(min_length=1, max_length=1000)
+    progression: str = Field(min_length=1, max_length=1000)
 
 # NSCA Training Load Chart: generic max-repetition references, not individual limits.
 RM_FRACTIONS = {1: 1.0, 2: .95, 3: .93, 4: .90, 5: .87, 6: .85, 7: .83, 8: .80, 9: .77, 10: .75}
@@ -143,11 +157,13 @@ def assess_plan(plan):
     for day in plan['days']:
         for exercise in day['exercises']:
             item = {'day': day['name'], 'exercise_id': exercise['exercise_id'],
-                'volume_kg': round(exercise['weight_kg'] * exercise['sets'] * exercise['reps'], 1),
+                'volume_kg': round(exercise['weight_kg'] * exercise['sets'] * exercise['reps'], 1) if exercise['weight_kg'] is not None else None,
                 'load_percent': None, 'rm_id': None, 'reference_1rm_kg': None}
             rm = baselines.get(exercise['exercise_id'])
             if profile and profile['restrictions'].strip():
                 item.update(status='review_required', message='存在训练限制，负荷评估需专业审核。')
+            elif exercise['weight_kg'] is None:
+                item.update(status='missing_load', message='重量待确认：补充该动作的可靠RM或根据实际训练填写重量。')
             elif not rm or not rm['confirmed_maximum']:
                 item.update(status='missing_rm', message='缺少确认的RM数据，暂不评估负荷。')
             elif (nutrition_today() - date.fromisoformat(rm['measured_on'])).days > 90:
@@ -189,17 +205,64 @@ def put_profile(profile: Profile):
 @app.post('/api/plans')
 def save_user_plan(plan: UserPlan):
     payload = plan.model_dump()
+    generation_id = payload.pop('generation_id')
+    draft = None
+    if generation_id:
+        draft = next((d for d in records('plan_draft') if d['id'] == generation_id), None)
+        if not draft:
+            raise HTTPException(422, 'AI草稿不存在，请重新生成')
+        if draft['profile_snapshot'] != get_profile() or draft['rm_snapshot'] != get_rm():
+            raise HTTPException(409, '画像或RM已变化，请重新生成AI计划')
     names = {e['id']: e['name'] for e in EXERCISES}
     for day in payload['days']:
         for exercise in day['exercises']:
             exercise['name'] = names[exercise['exercise_id']]
-    saved = save('plan', {**payload, 'created_on': nutrition_today().isoformat(), 'source': 'user',
-        'note': '由用户制定；RM评估仅提供参考，不自动修改动作、重量或组次。'})
+    metadata = {k: draft[k] for k in ('rationale', 'warmup', 'recovery', 'progression', 'model', 'profile_snapshot', 'rm_snapshot')} if draft else {}
+    saved = save('plan', {**payload, **metadata, 'generation_id': generation_id,
+        'created_on': nutrition_today().isoformat(), 'source': 'ai' if draft else 'user',
+        'note': 'AI生成、用户确认的训练计划；重量待确认的动作需先补充负荷。' if draft else '用户调整的训练计划；RM评估仅提供参考。'})
     return {**saved, 'assessment': assess_plan(saved)}
 
 @app.post('/api/plans/assess')
 def assess_draft(plan: UserPlan):
     return assess_plan(plan.model_dump())
+
+@app.get('/api/ai/status')
+def ai_status():
+    return ai_planner.status()
+
+@app.post('/api/plans/generate')
+async def generate_plan():
+    profile = get_profile()
+    if not profile:
+        raise HTTPException(422, '请先保存用户画像，再生成AI计划')
+    if profile['restrictions'].strip():
+        raise HTTPException(422, '画像包含伤病或训练限制。当前仅支持三项负重动作，请先确认适合的训练范围后再生成计划。')
+    rm_snapshot = get_rm()
+    baselines = {r['exercise_id']: r for r in rm_snapshot if r['confirmed_maximum']
+        and r['reference_1rm_kg'] and (nutrition_today() - date.fromisoformat(r['measured_on'])).days <= 90}
+    raw, model = await ai_planner.generate(profile, baselines, AIPlan.model_json_schema())
+    try:
+        generated = AIPlan.model_validate(raw).model_dump()
+        if len(generated['days']) != profile['days'] or len({d['name'] for d in generated['days']}) != profile['days']:
+            raise ValueError('训练日与画像不匹配')
+        for day in generated['days']:
+            if len(day['exercises']) > 3 or len({e['exercise_id'] for e in day['exercises']}) != len(day['exercises']):
+                raise ValueError('动作重复或过多')
+            for e in day['exercises']:
+                rm = baselines.get(e['exercise_id'])
+                if not rm:
+                    e['weight_kg'] = None
+                elif e['weight_kg'] is not None and (e['reps'] not in RM_FRACTIONS or
+                        e['weight_kg'] > rm['reference_1rm_kg'] * RM_FRACTIONS[e['reps']]):
+                    raise ValueError('重量超出RM参考')
+    except (ValidationError, ValueError, TypeError):
+        raise HTTPException(502, 'AI计划不符合动作、训练日或负荷要求，请重新生成') from None
+    if get_profile() != profile or get_rm() != rm_snapshot:
+        raise HTTPException(409, '生成过程中画像或RM已变化，请重新生成')
+    draft = save('plan_draft', {**generated, 'model': model, 'profile_snapshot': profile,
+        'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
+    return {**draft, 'generation_id': draft['id'], 'assessment': assess_plan(draft)}
 
 def nutrition_target(profile):
     bmr = 10 * profile['weight_kg'] + 6.25 * profile['height_cm'] - 5 * profile['age'] + (5 if profile['sex'] == 'male' else -161)
@@ -211,7 +274,7 @@ def nutrition_target(profile):
 
 @app.get('/api/plans')
 def get_plans():
-    return [{**p, 'assessment': assess_plan(p)} for p in records('plan') if p.get('source') == 'user']
+    return [{**p, 'assessment': assess_plan(p)} for p in records('plan') if p.get('source') in ('user', 'ai')]
 
 @app.post('/api/meals')
 def add_meal(meal: Meal):
