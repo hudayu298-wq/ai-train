@@ -13,11 +13,13 @@ class LibraryPage extends StatefulWidget {
     required this.onChanged,
     this.onSelect,
     this.assetBase = 'http://127.0.0.1:8000',
-  });
+    this.initialKind = 'foods',
+  }) : assert(initialKind == 'foods' || initialKind == 'exercises');
   final Future<dynamic> Function(String, String, Object?) request;
   final Future<void> Function() onChanged;
   final void Function(String, Map<String, dynamic>)? onSelect;
   final String assetBase;
+  final String initialKind;
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
@@ -38,6 +40,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
+    kind = widget.initialKind;
     load();
   }
 

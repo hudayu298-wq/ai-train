@@ -234,25 +234,27 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     await refresh();
   }
 
-  void openLibrary() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => LibraryPage(
-        assetBase: apiBase,
-        request: (path, method, body) =>
-            request(path, method: method, body: body),
-        onChanged: refreshCatalog,
-        onSelect: (kind, entry) => setState(() {
-          if (kind == 'foods') {
-            food = entry['id'];
-            tab = 3;
-          } else {
-            exercise = entry['id'];
-            tab = 2;
-          }
-        }),
-      ),
-    ),
-  );
+  void openLibrary({String initialKind = 'foods'}) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LibraryPage(
+            assetBase: apiBase,
+            initialKind: initialKind,
+            request: (path, method, body) =>
+                request(path, method: method, body: body),
+            onChanged: refreshCatalog,
+            onSelect: (kind, entry) => setState(() {
+              if (kind == 'foods') {
+                food = entry['id'];
+                tab = 3;
+              } else {
+                exercise = entry['id'];
+                tab = 2;
+              }
+            }),
+          ),
+        ),
+      );
 
   void notify(String message) {
     if (mounted) {
@@ -636,6 +638,17 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
 
   Widget analysisPage() => Column(
     children: [
+      panel('动作分类与动作库', [
+        const Text('按关节动作分类浏览动作，筛选训练部位，并查看动图、准备步骤和动作要点。'),
+        const SizedBox(height: 8),
+        const Text('分类包括水平推、水平拉、蹲、髋铰链、肘屈曲等；也可区分负重与自重训练。'),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          icon: const Icon(Icons.menu_book_outlined),
+          label: const Text('按关节动作浏览动作库'),
+          onPressed: () => openLibrary(initialKind: 'exercises'),
+        ),
+      ]),
       panel('实时动作训练', [
         const Text('支架取景 → 侧面角度确认 → 耳机测试 → 实时姿态计次与语音提示。'),
         select('实时检测动作', liveExercise, {
@@ -731,7 +744,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       title: const Text('LiftLab · 训练有据'),
       actions: [
         IconButton(
-          onPressed: openLibrary,
+          onPressed: () => openLibrary(
+            initialKind: tab == 2 || tab == 4 ? 'exercises' : 'foods',
+          ),
           tooltip: '食物与动作库',
           icon: const Icon(Icons.menu_book_outlined),
         ),

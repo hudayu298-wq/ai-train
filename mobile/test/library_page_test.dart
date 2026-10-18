@@ -33,6 +33,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: LibraryPage(
+            initialKind: 'exercises',
             onChanged: () async {},
             request: (path, method, body) async {
               calls.add(path);
@@ -48,8 +49,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('动作库'));
-      await tester.pumpAndSettle();
+      expect(calls.first, startsWith('/library/exercises'));
       await tester.tap(find.text('全部分类'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('肘屈曲').last);
