@@ -180,3 +180,52 @@ def test_legacy_meals_are_not_silently_assigned_to_breakfast():
     summary = client.get('/api/nutrition/today').json()
     assert summary['groups'][-1]['meal_type'] == 'unassigned'
     assert summary['totals']['kcal'] == 100
+
+def ai_result():
+    return {'name': 'AI周计划', 'days': [{'name': f'训练日{i + 1}',
+        'exercises': [{**PLAN['days'][0]['exercises'][0], 'weight_kg': None}]} for i in range(3)],
+        'rationale': '根据增肌目标安排', 'warmup': '逐步热身',
+        'recovery': '训练日之间恢复', 'progression': '根据完成情况复核'}
+
+def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
+    client.put('/api/profile', json=PROFILE)
+    async def fake(profile, rm, schema):
+        assert profile['goal'] == 'muscle_gain'
+        assert rm == {}
+        return ai_result(), 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'generate', fake)
+    result = client.post('/api/plans/generate', json={})
+    assert result.status_code == 200
+    draft = result.json()
+    assert client.get('/api/plans').json() == []
+    assert draft['assessment']['items'][0]['status'] == 'missing_load'
+    saved = client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')})
+    assert saved.status_code == 200
+    assert saved.json()['source'] == 'ai'
+    assert saved.json()['model'] == 'test-model'
+    assert len(client.get('/api/plans').json()) == 1
+    client.put('/api/profile', json={**PROFILE, 'weight_kg': 80})
+    assert client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 409
+
+def test_ai_rejects_invalid_day_count_and_excessive_load(monkeypatch):
+    client.put('/api/profile', json=PROFILE)
+    result = ai_result()
+    async def fake(*args):
+        return result, 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'generate', fake)
+    result['days'].pop()
+    assert client.post('/api/plans/generate').status_code == 502
+    result['days'].append({'name': '训练日3', 'exercises': [PLAN['days'][0]['exercises'][0].copy()]})
+    client.post('/api/rm', json={'exercise_id': 'bench', 'weight_kg': 50, 'reps': 1,
+        'measured_on': module.nutrition_today().isoformat(), 'confirmed_maximum': True})
+    assert client.post('/api/plans/generate').status_code == 502
+    assert module.records('plan_draft') == []
+
+def test_ai_missing_config_is_explicit_and_secrets_not_exposed(monkeypatch):
+    monkeypatch.setattr(module.ai_planner, 'settings', lambda: {'AI_API_KEY': '', 'AI_BASE_URL': '', 'AI_MODEL': ''})
+    assert client.post('/api/plans/generate').status_code == 422
+    client.put('/api/profile', json=PROFILE)
+    assert client.post('/api/plans/generate').status_code == 503
+    assert client.get('/api/ai/status').json()['configured'] is False
+    monkeypatch.setattr(module.ai_planner, 'settings', lambda: {'AI_API_KEY': 'secret', 'AI_BASE_URL': 'https://example.com', 'AI_MODEL': 'test'})
+    assert 'secret' not in client.get('/api/ai/status').text

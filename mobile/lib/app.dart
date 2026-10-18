@@ -129,8 +129,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       req.body = jsonEncode(body);
     }
     final response = await http.Response.fromStream(
-      await req.send().timeout(const Duration(seconds: 20)),
-    );
+      await req.send().timeout(
+        Duration(seconds: path == '/plans/generate' ? 110 : 20),
+      ),
+    ).timeout(Duration(seconds: path == '/plans/generate' ? 110 : 20));
     final result = jsonDecode(response.body);
     if (response.statusCode >= 400) {
       throw Exception(
@@ -312,11 +314,17 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   );
   Widget planPanel() {
     if (plans.isEmpty) {
-      return panel('我的训练计划', [const Text('在训练页自己填写计划，再提供RM数据进行评估。')]);
+      return panel('我的训练计划', [const Text('先保存画像，再到训练页生成AI计划并确认保存。')]);
     }
     final p = plans.first;
     return panel('我的计划 · ${p['name']}', [
       Text(p['note']),
+      if (p['source'] == 'ai') ...[
+        Text('制定理由：${p['rationale']}'),
+        Text('热身：${p['warmup']}'),
+        Text('恢复：${p['recovery']}'),
+        Text('调整建议：${p['progression']}'),
+      ],
       const SizedBox(height: 12),
       ...[
         for (final d in p['days'])
@@ -332,7 +340,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 ...[
                   for (final e in d['exercises'])
                     Text(
-                      '${e['name']} · ${e['weight_kg']} kg · ${e['sets']} × ${e['reps']} · 休息 ${e['rest_seconds']} 秒',
+                      '${e['name']} · ${e['weight_kg'] == null ? '重量待确认' : '${e['weight_kg']} kg'} · ${e['sets']} × ${e['reps']} · 休息 ${e['rest_seconds']} 秒',
                     ),
                 ],
               ],

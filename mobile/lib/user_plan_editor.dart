@@ -36,12 +36,16 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   String? message;
   final List<Map<String, dynamic>> entries = [];
   Map<String, dynamic>? assessment;
+  Map<String, dynamic>? aiDraft;
+  String? generationId;
 
   @override
   void initState() {
     super.initState();
     final plan = widget.currentPlan;
     if (plan != null) {
+      generationId = plan['generation_id'];
+      if (plan['source'] == 'ai') aiDraft = plan;
       title.text = plan['name'];
       for (final d in plan['days']) {
         for (final e in d['exercises']) {
@@ -150,6 +154,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     }
     return {
       'name': title.text.trim(),
+      if (generationId != null) 'generation_id': generationId,
       'days': [
         for (final d in groups.entries) {'name': d.key, 'exercises': d.value},
       ],
@@ -159,12 +164,11 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   void addEntry() {
     try {
       if (day.text.trim().isEmpty) throw Exception('请填写训练日名称');
-      final w = numeric(weight),
+      final w = weight.text.trim().isEmpty ? null : numeric(weight),
           s = integer(sets),
           r = integer(reps),
           pause = integer(rest);
-      if (w <= 0 ||
-          w > 500 ||
+      if ((w != null && (w <= 0 || w > 500)) ||
           s < 1 ||
           s > 20 ||
           r < 1 ||
@@ -203,6 +207,55 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text('AI 制定训练计划', style: Theme.of(context).textTheme.titleLarge),
+          const Text(
+            '根据已保存的画像、目标和RM生成一周草稿。点击生成会将画像及RM发送到已配置的模型服务，并替换当前未保存草稿；已保存的计划保留。',
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(busy ? '处理中…' : '根据画像生成 AI 计划'),
+            onPressed: busy
+                ? null
+                : () => run(() async {
+                    final result = Map<String, dynamic>.from(
+                      await widget.post('/plans/generate', {}),
+                    );
+                    if (!mounted) return;
+                    setState(() {
+                      aiDraft = result;
+                      generationId = result['generation_id'];
+                      title.text = result['name'];
+                      entries.clear();
+                      for (final d in result['days']) {
+                        for (final e in d['exercises']) {
+                          entries.add({
+                            'day': d['name'],
+                            ...Map<String, dynamic>.from(e),
+                          });
+                        }
+                      }
+                      editing = null;
+                      assessment = Map<String, dynamic>.from(
+                        result['assessment'],
+                      );
+                      message = 'AI草稿已生成，请检查下方动作与负荷，确认后保存';
+                    });
+                  }),
+          ),
+          if (busy) const LinearProgressIndicator(),
+          if (message != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(message!),
+            ),
+          if (aiDraft != null) ...[
+            Text('制定理由：${aiDraft!['rationale']}'),
+            Text('热身：${aiDraft!['warmup']}'),
+            Text('恢复：${aiDraft!['recovery']}'),
+            Text('调整建议：${aiDraft!['progression']}'),
+          ],
+          const Divider(height: 32),
           Text('我的 RM 数据', style: Theme.of(context).textTheme.titleLarge),
           const Text('填写已有数据：例如80kg最多完成5次即5RM。普通训练组不等于RM；不需要为使用App专门尝试极限重量。'),
           selector('RM 对应动作变式', rmExercise, (v) => rmExercise = v),
@@ -248,7 +301,8 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
               ),
             ),
           const Divider(height: 32),
-          Text('自己制定训练计划', style: Theme.of(context).textTheme.titleLarge),
+          Text('检查与调整计划草稿', style: Theme.of(context).textTheme.titleLarge),
+          const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
           field('计划名称', title, text: true),
           field('训练日名称（如周一）', day, text: true),
           selector('计划动作', exercise, (v) => exercise = v),
@@ -267,7 +321,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                 '${entries[i]['day']} · ${widget.exercises[entries[i]['exercise_id']]}',
               ),
               subtitle: Text(
-                '${entries[i]['weight_kg']}kg · ${entries[i]['sets']} × ${entries[i]['reps']} · 休息${entries[i]['rest_seconds']}秒',
+                '${entries[i]['weight_kg'] == null ? '重量待确认' : '${entries[i]['weight_kg']}kg'} · ${entries[i]['sets']} × ${entries[i]['reps']} · 休息${entries[i]['rest_seconds']}秒',
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -281,7 +335,9 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                             editing = i;
                             day.text = e['day'];
                             exercise = e['exercise_id'];
-                            weight.text = '${e['weight_kg']}';
+                            weight.text = e['weight_kg'] == null
+                                ? ''
+                                : '${e['weight_kg']}';
                             sets.text = '${e['sets']}';
                             reps.text = '${e['reps']}';
                             rest.text = '${e['rest_seconds']}';
@@ -327,13 +383,12 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                         assessment = Map<String, dynamic>.from(
                           result['assessment'],
                         );
-                        message = '用户计划已保存';
+                        message = '计划已确认保存';
                       });
                     }
                   }),
             child: const Text('保存我的计划并评估'),
           ),
-          if (message != null) Text(message!),
           if (assessment != null) ...[
             Text(assessment!['note']),
             for (final item in assessment!['items'])
