@@ -7,11 +7,13 @@ class UserPlanEditor extends StatefulWidget {
     required this.onSaved,
     required this.exercises,
     required this.rmRecords,
+    this.exerciseDetails = const {},
     this.currentPlan,
   });
   final Future<dynamic> Function(String, Map<String, dynamic>) post;
   final Future<void> Function() onSaved;
   final Map<String, String> exercises;
+  final Map<String, Map<String, dynamic>> exerciseDetails;
   final List<dynamic> rmRecords;
   final Map<String, dynamic>? currentPlan;
   @override
@@ -31,6 +33,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     text: DateTime.now().toIso8601String().split('T').first,
   );
   String exercise = 'bench', rmExercise = 'bench';
+  String movementCategory = '', bodyRegion = '';
   bool confirmed = false, busy = false;
   int? editing;
   String? message;
@@ -42,6 +45,8 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   @override
   void initState() {
     super.initState();
+    exercise = widget.exercises.keys.firstOrNull ?? '';
+    rmExercise = exercise;
     final plan = widget.currentPlan;
     if (plan != null) {
       generationId = plan['generation_id'];
@@ -53,6 +58,43 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
         }
       }
     }
+  }
+
+  String movementFor(String id) =>
+      widget.exerciseDetails[id]?['movement_pattern'] as String? ?? '未分类';
+
+  List<String> regionsFor(String id) =>
+      (widget.exerciseDetails[id]?['body_regions'] as List? ?? [])
+          .map((v) => '$v')
+          .toList();
+
+  List<String> get movementCategories =>
+      (widget.exercises.keys.map(movementFor).toSet().toList()..sort());
+
+  List<String> get bodyRegions =>
+      (widget.exercises.keys.expand(regionsFor).toSet().toList()..sort());
+
+  Map<String, String> get filteredExercises => {
+    for (final e in widget.exercises.entries)
+      if ((movementCategory.isEmpty ||
+              movementFor(e.key) == movementCategory) &&
+          (bodyRegion.isEmpty || regionsFor(e.key).contains(bodyRegion)))
+        e.key: e.value,
+  };
+
+  void filterExercises({String? category, String? region}) {
+    movementCategory = category ?? movementCategory;
+    bodyRegion = region ?? bodyRegion;
+    if (!filteredExercises.containsKey(exercise)) {
+      exercise = filteredExercises.keys.firstOrNull ?? '';
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant UserPlanEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!movementCategories.contains(movementCategory)) movementCategory = '';
+    if (!bodyRegions.contains(bodyRegion)) bodyRegion = '';
   }
 
   @override
@@ -99,27 +141,35 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           ),
         ),
       );
-  Widget selector(String label, String value, ValueChanged<String> change) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: DropdownButtonFormField<String>(
-          key: ValueKey('$label-$value'),
-          initialValue: widget.exercises.containsKey(value) ? value : null,
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: label,
-            border: const OutlineInputBorder(),
-          ),
-          items: widget.exercises.entries
-              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-              .toList(),
-          onChanged: busy
-              ? null
-              : (v) {
-                  if (v != null) setState(() => change(v));
-                },
+  Widget selector(
+    String label,
+    String value,
+    ValueChanged<String> change, {
+    Map<String, String>? options,
+  }) {
+    final choices = options ?? widget.exercises;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('$label-$value-${choices.keys.join(',')}'),
+        initialValue: choices.containsKey(value) ? value : null,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
         ),
-      );
+        items: choices.entries
+            .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+            .toList(),
+        onChanged: busy || choices.isEmpty
+            ? null
+            : (v) {
+                if (v != null) setState(() => change(v));
+              },
+      ),
+    );
+  }
+
   Future<void> run(Future<void> Function() work) async {
     if (busy) return;
     setState(() {
@@ -164,6 +214,9 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
 
   void addEntry() {
     try {
+      if (!filteredExercises.containsKey(exercise)) {
+        throw Exception('请先选择可用的计划动作');
+      }
       if (day.text.trim().isEmpty) throw Exception('请填写训练日名称');
       final w = weight.text.trim().isEmpty ? null : numeric(weight),
           s = integer(sets),
@@ -306,13 +359,48 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
           field('计划名称', title, text: true),
           field('训练日名称（如周一）', day, text: true),
-          selector('计划动作', exercise, (v) => exercise = v),
+          selector(
+            '关节动作分类',
+            movementCategory,
+            (v) => filterExercises(category: v),
+            options: {
+              '': '全部关节动作',
+              for (final category in movementCategories) category: category,
+            },
+          ),
+          selector(
+            '训练部位',
+            bodyRegion,
+            (v) => filterExercises(region: v),
+            options: {
+              '': '全部训练部位',
+              for (final region in bodyRegions) region: region,
+            },
+          ),
+          selector(
+            '计划动作',
+            exercise,
+            (v) => exercise = v,
+            options: filteredExercises,
+          ),
+          Text(
+            filteredExercises.isEmpty
+                ? '当前分类与部位下没有可用动作，请调整筛选。'
+                : '可选 ${filteredExercises.length} 个负重动作。',
+          ),
+          if (filteredExercises.containsKey(exercise) &&
+              widget.exerciseDetails.containsKey(exercise))
+            Text(
+              '${movementFor(exercise)} · 训练部位：${regionsFor(exercise).join('、')}\n${widget.exerciseDetails[exercise]?['weight_basis'] ?? ''}',
+            ),
           field('计划重量 / kg', weight),
           field('组数', sets),
           field('每组次数', reps),
           field('组间休息 / 秒', rest),
           OutlinedButton(
-            onPressed: busy ? null : addEntry,
+            onPressed: busy || !filteredExercises.containsKey(exercise)
+                ? null
+                : addEntry,
             child: Text(editing == null ? '添加到计划' : '更新该动作'),
           ),
           for (int i = 0; i < entries.length; i++)
@@ -336,6 +424,8 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                             editing = i;
                             day.text = e['day'];
                             exercise = e['exercise_id'];
+                            movementCategory = '';
+                            bodyRegion = '';
                             weight.text = e['weight_kg'] == null
                                 ? ''
                                 : '${e['weight_kg']}';
