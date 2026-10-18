@@ -474,6 +474,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         post: (path, body) => request(path, method: 'POST', body: body),
         onSaved: refresh,
         exercises: exercises,
+        exerciseDetails: {
+          for (final e in catalog?['exercises'] ?? [])
+            if (e['type'] == 'weighted')
+              '${e['id']}': Map<String, dynamic>.from(e),
+        },
         rmRecords: rmRecords,
         currentPlan: plans.isEmpty
             ? null
