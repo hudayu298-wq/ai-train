@@ -13,23 +13,20 @@ class LibraryPage extends StatefulWidget {
     required this.onChanged,
     this.onSelect,
     this.assetBase = 'http://127.0.0.1:8000',
-    this.initialKind = 'foods',
-  }) : assert(initialKind == 'foods' || initialKind == 'exercises');
+    required this.kind,
+  }) : assert(kind == 'foods' || kind == 'exercises');
   final Future<dynamic> Function(String, String, Object?) request;
   final Future<void> Function() onChanged;
   final void Function(String, Map<String, dynamic>)? onSelect;
   final String assetBase;
-  final String initialKind;
+  final String kind;
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  String kind = 'foods',
-      category = '',
-      type = '',
-      bodyPart = '',
-      cameraView = 'unknown';
+  String get kind => widget.kind;
+  String category = '', type = '', bodyPart = '', cameraView = 'unknown';
   final query = TextEditingController();
   List<dynamic> entries = [], categories = [];
   List<dynamic> bodyParts = [];
@@ -40,7 +37,6 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
-    kind = widget.initialKind;
     load();
   }
 
@@ -476,7 +472,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('食物与动作库')),
+    appBar: AppBar(title: Text(kind == 'foods' ? '食物库' : '动作库')),
     body: SingleChildScrollView(
       padding: const EdgeInsets.all(18),
       child: Center(
@@ -485,37 +481,6 @@ class _LibraryPageState extends State<LibraryPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'foods',
-                    label: Text('食物库'),
-                    icon: Icon(Icons.restaurant),
-                  ),
-                  ButtonSegment(
-                    value: 'exercises',
-                    label: Text('动作库'),
-                    icon: Icon(Icons.fitness_center),
-                  ),
-                ],
-                selected: {kind},
-                onSelectionChanged: busy
-                    ? null
-                    : (values) {
-                        setState(() {
-                          kind = values.first;
-                          category = '';
-                          type = '';
-                          bodyPart = '';
-                          entries = [];
-                          categories = [];
-                          bodyParts = [];
-                          query.clear();
-                        });
-                        load();
-                      },
-              ),
-              const SizedBox(height: 12),
               Text(
                 kind == 'foods'
                     ? '按食物类型分类，营养为每100克可食部分；请核对生熟状态、来源和实际品牌。'

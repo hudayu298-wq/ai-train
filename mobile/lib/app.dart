@@ -344,27 +344,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     await refresh();
   }
 
-  void openLibrary({String initialKind = 'foods'}) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => LibraryPage(
-            assetBase: apiBase,
-            initialKind: initialKind,
-            request: (path, method, body) =>
-                request(path, method: method, body: body),
-            onChanged: refreshCatalog,
-            onSelect: (kind, entry) => setState(() {
-              if (kind == 'foods') {
-                food = entry['id'];
-                tab = 3;
-              } else {
-                exercise = entry['id'];
-                tab = 2;
-              }
-            }),
-          ),
-        ),
-      );
+  void openLibrary({required String kind}) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LibraryPage(
+        assetBase: apiBase,
+        kind: kind,
+        request: (path, method, body) =>
+            request(path, method: method, body: body),
+        onChanged: refreshCatalog,
+        onSelect: (kind, entry) => setState(() {
+          if (kind == 'foods') {
+            food = entry['id'];
+            tab = 3;
+          } else {
+            exercise = entry['id'];
+            tab = 2;
+          }
+        }),
+      ),
+    ),
+  );
 
   void notify(String message) {
     if (mounted) {
@@ -752,9 +751,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       panel('记录当天这一餐', [
         const Text('营养按每100克可食部分计算，请核对生熟状态与来源。品牌食品可按包装标签新增。'),
         OutlinedButton.icon(
-          onPressed: openLibrary,
+          onPressed: () => openLibrary(kind: 'foods'),
           icon: const Icon(Icons.search),
-          label: const Text('搜索食物 / 管理资料库'),
+          label: const Text('打开食物库'),
         ),
         select('餐次', mealType, mealTypes, (v) => mealType = v),
         select('食物', food, {
@@ -860,7 +859,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         FilledButton.icon(
           icon: const Icon(Icons.menu_book_outlined),
           label: const Text('浏览动作分类'),
-          onPressed: () => openLibrary(initialKind: 'exercises'),
+          onPressed: () => openLibrary(kind: 'exercises'),
         ),
       ]),
       panel('实时动作训练', [
@@ -1034,13 +1033,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           tooltip: '切换桌宠教练',
           icon: const Icon(Icons.groups_outlined),
         ),
-        if (tab != 0)
+        if (tab == 2 || tab == 3 || tab == 4)
           IconButton(
-            onPressed: () => openLibrary(
-              initialKind: tab == 2 || tab == 4 ? 'exercises' : 'foods',
-            ),
-            tooltip: '食物与动作库',
-            icon: const Icon(Icons.menu_book_outlined),
+            onPressed: () =>
+                openLibrary(kind: tab == 3 ? 'foods' : 'exercises'),
+            tooltip: tab == 3 ? '食物库' : '动作库',
+            icon: Icon(tab == 3 ? Icons.restaurant_menu : Icons.fitness_center),
           ),
         IconButton(
           onPressed: busy ? null : initialize,

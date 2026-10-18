@@ -33,7 +33,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: LibraryPage(
-            initialKind: 'exercises',
+            kind: 'exercises',
             onChanged: () async {},
             request: (path, method, body) async {
               calls.add(path);
@@ -50,6 +50,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(calls.first, startsWith('/library/exercises'));
+      expect(find.text('动作库'), findsOneWidget);
+      expect(find.text('食物库'), findsNothing);
       await tester.tap(find.text('全部分类'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('肘屈曲').last);
@@ -78,6 +80,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: LibraryPage(
+          kind: 'foods',
           onChanged: () async {},
           request: (path, method, body) async {
             paths.add(path);
@@ -123,9 +126,10 @@ void main() {
     expect(saved?['state'], 'prepared');
     expect(saved?['source_label'], '每100g包装标签');
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('动作库'));
-    await tester.pumpAndSettle();
-    expect(paths.last, startsWith('/library/exercises?'));
+    expect(find.text('食物库'), findsOneWidget);
+    expect(find.text('动作库'), findsNothing);
+    expect(find.byType(SegmentedButton<String>), findsNothing);
+    expect(paths.every((p) => p.startsWith('/library/foods')), isTrue);
     expect(tester.takeException(), isNull);
   });
 }
