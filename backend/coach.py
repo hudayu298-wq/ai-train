@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 try:
     from . import ai_planner, coaches, workouts
@@ -24,6 +24,11 @@ LABELS = {
     'days': '每周训练天数', 'restrictions': '伤病或训练限制',
     'dietary_preferences': '饮食偏好', 'equipment': '可用器械',
     'training_preferences': '训练偏好', 'schedule': '时间安排',
+    'training_weekdays': '每周训练日', 'session_minutes': '单次训练时长',
+    'preferred_time': '训练时间', 'training_months': '训练月数',
+    'sleep_hours': '平均睡眠时长', 'recovery_status': '恢复情况',
+    'goal_detail': '具体目标', 'injury_status': '伤病状态',
+    'movement_constraints': '不适动作与可训练范围', 'load_increment_kg': '可用最小加重幅度',
 }
 CORE = {'age', 'height_cm', 'weight_kg', 'sex', 'goal', 'experience', 'days', 'restrictions'}
 REQUIRED = CORE - {'restrictions'}
@@ -43,6 +48,23 @@ class ProfilePatch(BaseModel):
     equipment: str | None = Field(default=None, max_length=1000)
     training_preferences: str | None = Field(default=None, max_length=1000)
     schedule: str | None = Field(default=None, max_length=1000)
+    training_weekdays: list[int] | None = Field(default=None, min_length=1, max_length=7)
+    session_minutes: int | None = Field(default=None, ge=15, le=180, strict=True)
+    preferred_time: str | None = Field(default=None, pattern=r'^(?:[01]\d|2[0-3]):[0-5]\d$')
+    training_months: int | None = Field(default=None, ge=0, le=600, strict=True)
+    sleep_hours: float | None = Field(default=None, ge=0, le=14)
+    recovery_status: Literal['good', 'normal', 'poor'] | None = None
+    goal_detail: str | None = Field(default=None, max_length=1000)
+    injury_status: Literal['none', 'historical', 'current'] | None = None
+    movement_constraints: str | None = Field(default=None, max_length=1000)
+    load_increment_kg: float | None = Field(default=None, gt=0, le=20)
+
+    @field_validator('training_weekdays')
+    @classmethod
+    def weekdays(cls, value):
+        if value is not None and (any(type(d) is not int or not 1 <= d <= 7 for d in value) or len(set(value)) != len(value)):
+            raise ValueError('训练日必须是互不重复的1至7')
+        return sorted(value) if value is not None else None
 
 
 class MessageRequest(BaseModel):
@@ -67,13 +89,11 @@ class CoachOutput(BaseModel):
 
 
 def read(db, kind, key):
-    row = db.execute('SELECT payload FROM records WHERE kind=? AND id=?', (kind, key)).fetchone()
-    return json.loads(row['payload']) if row else None
+    return db.read(kind, key)
 
 
 def write(db, kind, key, payload):
-    db.execute('INSERT OR REPLACE INTO records VALUES (?, ?, ?)',
-               (key, kind, json.dumps(payload, ensure_ascii=False)))
+    db.write(kind, key, payload)
 
 
 def state(db):
@@ -83,13 +103,13 @@ def state(db):
     missing = sorted(REQUIRED - facts.keys())
     return {'facts': facts, 'missing_fields': missing, 'labels': LABELS,
             'complete': not missing, 'updated_at': stored.get('updated_at'),
+            'strength_records': db.records('rm'),
             'training_memory': workouts.memory(db)}
 
 
 def turns(db, limit=40):
-    rows = db.execute("SELECT payload FROM records WHERE kind='coach_turn' ORDER BY rowid DESC LIMIT ?",
-                      (limit,)).fetchall()
-    return [json.loads(r['payload']) for r in reversed(rows)]
+    return [{k: v for k, v in row.items() if k != 'id'}
+            for row in reversed(db.records('coach_turn', limit=limit))]
 
 
 def fingerprint(db):
@@ -101,6 +121,10 @@ def fingerprint(db):
 def apply_profile(db, changes, profile_model, source):
     current = state(db)['facts']
     merged = {**current, **changes}
+    if 'training_weekdays' in changes:
+        merged['days'] = len(changes['training_weekdays'])
+    elif 'days' in changes and len(merged.get('training_weekdays', [])) != changes['days']:
+        merged.pop('training_weekdays', None)
     now = datetime.now(timezone.utc).isoformat()
     write(db, 'coach_profile', 'local-coach-profile',
           {'facts': merged, 'updated_at': now, 'last_source': source})
@@ -120,7 +144,7 @@ def validate_updates(output, message):
         if update.evidence not in message or not update.evidence.strip() or update.value is None:
             raise ValueError('missing current-message evidence')
         validated = ProfilePatch.model_validate({update.field: update.value})
-        if update.field in ('age', 'height_cm', 'weight_kg', 'days'):
+        if update.field in ('age', 'height_cm', 'weight_kg', 'days', 'session_minutes', 'training_months', 'sleep_hours', 'load_increment_kg'):
             numbers = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', update.evidence)]
             candidates = list(numbers)
             if update.field == 'height_cm' and '米' in update.evidence:
@@ -183,7 +207,7 @@ def router(connection, profile_model, context_provider):
     def edit_profile(patch: ProfilePatch):
         changes = patch.model_dump(exclude_unset=True, exclude_none=True)
         with connection() as db:
-            db.execute('BEGIN IMMEDIATE')
+            db.lock_user()
             return apply_profile(db, changes, profile_model, 'manual')
 
     @api.get('/messages')
@@ -217,7 +241,7 @@ def router(connection, profile_model, context_provider):
         except (ValidationError, ValueError, TypeError):
             raise HTTPException(502, 'AI回复或画像提取不符合要求，尚未记录，请重试') from None
         with connection() as db:
-            db.execute('BEGIN IMMEDIATE')
+            db.lock_user()
             cached = read(db, 'coach_turn', key)
             if cached:
                 if cached['user_message'] != request.message or (

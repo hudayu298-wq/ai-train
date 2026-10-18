@@ -54,30 +54,22 @@ KINDS = {'foods': FoodEntry, 'exercises': ExerciseEntry}
 
 def initialize(connection):
     with connection() as db:
-        db.execute('''CREATE TABLE IF NOT EXISTS catalog_items (
-            kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
-            category TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
-            payload TEXT NOT NULL, PRIMARY KEY(kind,id))''')
-        db.execute('CREATE INDEX IF NOT EXISTS catalog_kind_category ON catalog_items(kind,category,active)')
         for kind in KINDS:
             entries = json.loads((Path(__file__).parent / 'data' / f'{kind}.json').read_text(encoding='utf-8'))
-            for entry in entries:
+            for order, entry in enumerate(entries):
                 KINDS[kind].model_validate(entry)
-                db.execute('INSERT OR IGNORE INTO catalog_items VALUES (?,?,?,?,1,?)',
-                    (kind, entry['id'], entry['name'], entry['category'], json.dumps(entry, ensure_ascii=False)))
+                db.catalog_write(kind, entry, ignore=True, order=order)
 
 def all_entries(connection, kind):
     with connection() as db:
-        entries = [json.loads(r['payload']) for r in db.execute(
-            'SELECT payload FROM catalog_items WHERE kind=? AND active=1 ORDER BY rowid', (kind,))]
+        entries = db.catalog_read(kind)
     return [exercise_content.enrich(e) for e in entries] if kind == 'exercises' else entries
 
 def find_entry(connection, kind, entry_id):
     with connection() as db:
-        row = db.execute('SELECT payload FROM catalog_items WHERE kind=? AND id=? AND active=1', (kind, entry_id)).fetchone()
-    if not row:
+        entry = db.catalog_read(kind, entry_id)
+    if not entry:
         return None
-    entry = json.loads(row['payload'])
     return exercise_content.enrich(entry) if kind == 'exercises' else entry
 
 def custom_payload(kind, entry, entry_id=None):
@@ -135,11 +127,10 @@ def router(connection):
             raise HTTPException(409, '导入ID重复')
         with connection() as db:
             for p in payloads:
-                if db.execute('SELECT 1 FROM catalog_items WHERE kind=? AND id=?', (kind, p['id'])).fetchone():
+                if db.catalog_read(kind, p['id'], active=False):
                     raise HTTPException(409, 'ID已存在，导入未执行；修改已有条目请使用编辑功能')
             for p in payloads:
-                db.execute('INSERT INTO catalog_items VALUES (?,?,?,?,1,?)',
-                    (kind, p['id'], p['name'], p['category'], json.dumps(p, ensure_ascii=False)))
+                db.catalog_write(kind, p)
         return {'imported': len(payloads)}
 
     @routes.post('/foods')
@@ -153,10 +144,9 @@ def router(connection):
     def insert(kind, entry):
         payload = custom_payload(kind, entry)
         with connection() as db:
-            if db.execute('SELECT 1 FROM catalog_items WHERE kind=? AND id=?', (kind, payload['id'])).fetchone():
+            if db.catalog_read(kind, payload['id'], active=False):
                 raise HTTPException(409, '条目ID已存在')
-            db.execute('INSERT INTO catalog_items VALUES (?,?,?,?,1,?)',
-                (kind, payload['id'], payload['name'], payload['category'], json.dumps(payload, ensure_ascii=False)))
+            db.catalog_write(kind, payload)
         return payload
 
     @routes.get('/{kind}/{entry_id}')
@@ -184,8 +174,7 @@ def router(connection):
             payload['realtime_supported'] = existing.get('realtime_supported', False)
             payload['content_version'] = 'user-draft-1'
         with connection() as db:
-            db.execute('UPDATE catalog_items SET name=?,category=?,payload=? WHERE kind=? AND id=?',
-                (payload['name'], payload['category'], json.dumps(payload, ensure_ascii=False), kind, entry_id))
+            db.catalog_update(kind, entry_id, name=payload['name'], category=payload['category'], payload=payload)
         return payload
 
     @routes.put('/foods/{entry_id}')
@@ -199,8 +188,8 @@ def router(connection):
     @routes.delete('/{kind}/{entry_id}')
     def archive(kind: Literal['foods', 'exercises'], entry_id: str):
         with connection() as db:
-            changed = db.execute('UPDATE catalog_items SET active=0 WHERE kind=? AND id=? AND active=1', (kind, entry_id))
-            if not changed.rowcount:
+            changed = db.catalog_update(kind, entry_id, active=False)
+            if not changed:
                 raise HTTPException(404, '条目不存在或已停用')
         return {'archived': True}
 

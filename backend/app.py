@@ -1,20 +1,23 @@
-"""Local MVP. Single local user; add authentication before any public deployment."""
+"""LiftLab API with account authentication and owner-scoped storage."""
 import json
 import os
-import sqlite3
-from contextlib import contextmanager
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner, library, movement_analysis, coach, reminders, workouts
+    from . import ai_planner, library, movement_analysis, coach, reminders, workouts, database, auth, progression
 except ImportError:
     import ai_planner
     import library
@@ -22,39 +25,53 @@ except ImportError:
     import coach
     import reminders
     import workouts
+    import database
+    import auth
+    import progression
 
 ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / '.env', override=False)
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
 DATA.mkdir(parents=True, exist_ok=True)
-DB = DATA / 'fitness.db'
+DB = DATA / 'fitness-v2.db'
 
-@contextmanager
 def connection():
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
-    try:
-        with conn:
-            yield conn
-    finally:
-        conn.close()
+    return database.connection(DB)
 
-with connection() as db:
-    db.execute('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, kind TEXT, payload TEXT)')
+# Production schemas are upgraded explicitly with Alembic before starting the service.
+if os.environ.get('APP_ENV') != 'production':
+    database.metadata.create_all(database.get_engine(DB))
+auth.secret()
 
 def save(kind, payload, key=None):
     key = key or str(uuid4())
     with connection() as db:
-        db.execute('INSERT OR REPLACE INTO records VALUES (?, ?, ?)', (key, kind, json.dumps(payload, ensure_ascii=False)))
+        db.write(kind, key, payload)
     return {'id': key, **payload}
 
 def records(kind):
     with connection() as db:
-        rows = db.execute('SELECT id, payload FROM records WHERE kind=? ORDER BY rowid DESC', (kind,)).fetchall()
-    return [{'id': row['id'], **json.loads(row['payload'])} for row in rows]
+        return db.records(kind)
 
-app = FastAPI(title='LiftLab API', version='0.1.0')
+app = FastAPI(title='练伴 API', version='0.2.0',
+    docs_url=None if os.environ.get('APP_ENV') == 'production' else '/docs',
+    redoc_url=None if os.environ.get('APP_ENV') == 'production' else '/redoc',
+    openapi_url=None if os.environ.get('APP_ENV') == 'production' else '/openapi.json')
+auth.install_middleware(app, DB)
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request, exc):
+    # Default Pydantic errors include raw input, which can contain credentials.
+    return JSONResponse(status_code=422, content={'detail': '输入不符合要求，请检查字段和数值范围',
+        'fields': [list(e['loc']) for e in exc.errors()]})
+
+@app.exception_handler(IntegrityError)
+async def conflict_error(request, exc):
+    return JSONResponse(status_code=409, content={'detail': '记录冲突，请刷新后重试'})
 app.add_middleware(CORSMiddleware, allow_origin_regex=r'https?://(localhost|127\.0\.0\.1)(:\d+)?',
-                   allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Content-Type'])
+                   allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Content-Type', 'Authorization'])
+
+app.include_router(auth.router(DB, DATA))
 
 library.initialize(connection)
 app.include_router(library.router(connection))
@@ -127,11 +144,15 @@ class PlanExercise(BaseModel):
 class PlanDay(BaseModel):
     name: str = Field(min_length=1, max_length=40, pattern=r'.*\S.*')
     exercises: list[PlanExercise] = Field(min_length=1, max_length=20)
+    weekday: int | None = Field(default=None, ge=1, le=7)
+    start_time: str | None = Field(default=None, pattern=r'^(?:[01]\d|2[0-3]):[0-5]\d$')
+    duration_minutes: int | None = Field(default=None, ge=15, le=180)
 
 class UserPlan(BaseModel):
     name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
     days: list[PlanDay] = Field(min_length=1, max_length=7)
     generation_id: str | None = None
+    base_plan_id: str | None = None
 
 class AIPlan(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -141,6 +162,9 @@ class AIPlan(BaseModel):
     warmup: str = Field(min_length=1, max_length=1000)
     recovery: str = Field(min_length=1, max_length=1000)
     progression: str = Field(min_length=1, max_length=1000)
+    cycle_weeks: int = Field(default=4, ge=2, le=12)
+    weeks: list[str] = Field(default_factory=list, max_length=12)
+    risk_warnings: list[str] = Field(default_factory=list, max_length=10)
 
 # NSCA Training Load Chart: generic max-repetition references, not individual limits.
 RM_FRACTIONS = {1: 1.0, 2: .95, 3: .93, 4: .90, 5: .87, 6: .85, 7: .83, 8: .80, 9: .77, 10: .75}
@@ -174,8 +198,8 @@ def assess_plan(plan):
                 'load_percent': None, 'rm_id': None, 'reference_1rm_kg': None}
             rm = baselines.get(exercise['exercise_id'])
             if profile and profile['restrictions'].strip():
-                item.update(status='review_required', message='存在训练限制，负荷评估需专业审核。')
-            elif exercise['weight_kg'] is None:
+                item['risk_warning'] = '已记录伤病或限制；以下为负荷参考，请结合可训练范围，不适时暂停相关动作。'
+            if exercise['weight_kg'] is None:
                 item.update(status='missing_load', message='重量待确认：补充该动作的可靠RM或根据实际训练填写重量。')
             elif not rm or not rm['confirmed_maximum']:
                 item.update(status='missing_rm', message='缺少确认的RM数据，暂不评估负荷。')
@@ -200,7 +224,7 @@ def assess_plan(plan):
 
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', 'mode': 'local_single_user', 'vision_enabled': False}
+    return {'status': 'ok', 'mode': 'multi_user', 'vision_enabled': False}
 
 @app.get('/api/catalog')
 def catalog(extended: bool = False):
@@ -223,31 +247,51 @@ def put_profile(profile: Profile):
 def save_user_plan(plan: UserPlan):
     payload = plan.model_dump()
     generation_id = payload.pop('generation_id')
-    draft = None
-    if generation_id:
-        draft = next((d for d in records('plan_draft') if d['id'] == generation_id), None)
-        if not draft:
-            raise HTTPException(422, 'AI草稿不存在，请重新生成')
-        if draft['profile_snapshot'] != get_profile() or draft['rm_snapshot'] != get_rm():
-            raise HTTPException(409, '画像或RM已变化，请重新生成AI计划')
-        if 'coach_profile_snapshot' in draft:
-            with connection() as db:
-                if draft['coach_profile_snapshot'] != coach.state(db)['facts']:
-                    raise HTTPException(409, '画像偏好已变化，请重新生成AI计划')
-        if 'training_revision' in draft:
-            with connection() as db:
-                if workouts.revision(db) != draft['training_revision']:
-                    raise HTTPException(409, '训练档案已变化，请重新生成AI计划')
+    base_plan_id = payload.pop('base_plan_id')
     validate_plan_exercises(payload)
-    names = {e['id']: e['name'] for e in exercise_entries()}
-    for day in payload['days']:
-        for exercise in day['exercises']:
-            exercise['name'] = names[exercise['exercise_id']]
-    metadata = {k: draft[k] for k in ('rationale', 'warmup', 'recovery', 'progression', 'model', 'profile_snapshot', 'rm_snapshot', 'coach_profile_snapshot') if k in draft} if draft else {}
-    saved = save('plan', {**payload, **metadata, 'generation_id': generation_id,
-        'created_on': nutrition_today().isoformat(), 'source': 'ai' if draft else 'user',
-        'note': 'AI生成、用户确认的训练计划；重量待确认的动作需先补充负荷。' if draft else '用户调整的训练计划；RM评估仅提供参考。'})
-    return {**saved, 'assessment': assess_plan(saved)}
+    with connection() as db:
+        db.lock_user()
+        current = progression.active_plan(db)
+        draft = db.read('plan_draft', generation_id) if generation_id else None
+        if generation_id and not draft:
+            raise HTTPException(422, 'AI草稿不存在，请重新生成')
+        if generation_id:
+            existing = next((p for p in db.records('plan') if p.get('generation_id') == generation_id), None)
+            if existing:
+                if existing['name'] != payload['name'] or progression.day_inputs(existing['days']) != progression.day_inputs(payload['days']):
+                    raise HTTPException(409, '该草稿已确认，修改当前计划请使用编辑入口')
+                return {**existing, 'assessment': assess_plan(existing)}
+            if draft['profile_snapshot'] != get_profile() or draft['rm_snapshot'] != get_rm():
+                raise HTTPException(409, '画像或RM已变化，请重新生成AI计划')
+            if draft.get('coach_profile_snapshot') != coach.state(db)['facts']:
+                raise HTTPException(409, '画像偏好已变化，请重新生成AI计划')
+            if draft.get('training_revision') != workouts.revision(db):
+                raise HTTPException(409, '训练档案已变化，请重新生成AI计划')
+            if draft.get('base_plan_id') != (current or {}).get('id'):
+                raise HTTPException(409, '当前计划已更新，请重新生成')
+        if base_plan_id and (not current or current['id'] != base_plan_id):
+            raise HTTPException(409, '当前计划已更新，请刷新后修改')
+        metadata_source = draft or (current if base_plan_id else {}) or {}
+        metadata = {k: metadata_source[k] for k in ('rationale', 'warmup', 'recovery', 'progression', 'model',
+            'profile_snapshot', 'rm_snapshot', 'coach_profile_snapshot', 'cycle_weeks', 'weeks', 'risk_warnings') if k in metadata_source}
+        names = {e['id']: e['name'] for e in exercise_entries()}
+        for day in payload['days']:
+            if len({e['exercise_id'] for e in day['exercises']}) != len(day['exercises']):
+                raise HTTPException(422, '同一训练日不能重复添加同一动作')
+            for exercise in day['exercises']:
+                exercise['name'] = names[exercise['exercise_id']]
+        if draft and len(payload['days']) != draft['profile_snapshot']['days']:
+            raise HTTPException(422, '确认计划的训练日数量需与画像一致')
+        key = str(uuid4())
+        saved = {**payload, **metadata, 'generation_id': generation_id,
+            'base_plan_id': (current or {}).get('id'), 'version': (current or {}).get('version', 0) + 1,
+            'cycle_id': current.get('cycle_id', current['id']) if base_plan_id else key,
+            'cycle_week': current.get('cycle_week', 1) if base_plan_id else 1,
+            'created_on': nutrition_today().isoformat(), 'source': 'ai' if draft else 'user',
+            'note': 'AI生成、用户确认的训练计划。' if draft else '用户确认修改的训练计划。'}
+        db.write('plan', key, saved)
+    return {'id': key, **saved, 'assessment': assess_plan(saved)}
+
 
 @app.post('/api/plans/assess')
 def assess_draft(plan: UserPlan):
@@ -263,21 +307,23 @@ async def generate_plan():
     profile = get_profile()
     if not profile:
         raise HTTPException(422, '请先保存用户画像，再生成AI计划')
-    if profile['restrictions'].strip():
-        raise HTTPException(422, '画像包含伤病或训练限制。请先确认适合的训练范围后再生成计划。')
     rm_snapshot = get_rm()
     with connection() as db:
         coach_snapshot = coach.state(db)['facts']
         training_snapshot = workouts.memory(db)
         training_revision = workouts.revision(db)
+        base_plan_id = (progression.active_plan(db) or {}).get('id')
     baselines = {r['exercise_id']: r for r in rm_snapshot if r['confirmed_maximum']
         and r['reference_1rm_kg'] and (nutrition_today() - date.fromisoformat(r['measured_on'])).days <= 90}
     available = [e for e in exercise_entries() if e['type'] == 'weighted']
     if not available:
         raise HTTPException(422, '动作库没有可用的负重动作')
     schema = AIPlan.model_json_schema()
+    schema['properties']['days'].update(minItems=profile['days'], maxItems=profile['days'])
+    schema['$defs']['PlanDay']['properties']['exercises']['maxItems'] = 6
     schema['$defs']['PlanExercise']['properties']['exercise_id']['enum'] = [e['id'] for e in available]
-    schema['x-exercise-catalog'] = [{k: e[k] for k in ('id', 'name', 'category', 'equipment', 'weight_basis')} for e in available]
+    schema['x-exercise-catalog'] = [{k: e.get(k) for k in ('id', 'name', 'category', 'equipment', 'weight_basis',
+        'body_regions', 'joint_actions', 'primary_muscles')} for e in available]
     raw, model = await ai_planner.generate({**profile, **coach_snapshot,
         'training_memory': training_snapshot}, baselines, schema)
     try:
@@ -298,6 +344,23 @@ async def generate_plan():
                     raise ValueError('重量超出RM参考')
     except (ValidationError, ValueError, TypeError):
         raise HTTPException(502, 'AI计划不符合动作、训练日或负荷要求，请重新生成') from None
+    weekdays = coach_snapshot.get('training_weekdays', [])
+    for index, day in enumerate(generated['days']):
+        if len(weekdays) == profile['days']:
+            day['weekday'] = weekdays[index]
+            day['name'] = '周' + '一二三四五六日'[weekdays[index] - 1] + f' · 训练{index + 1}'
+        day['start_time'] = coach_snapshot.get('preferred_time')
+        day['duration_minutes'] = coach_snapshot.get('session_minutes')
+        if day['duration_minutes']:
+            estimate = 300 + sum(e['sets'] * e['reps'] * 4 + max(0, e['sets'] - 1) * e['rest_seconds'] + 60 for e in day['exercises'])
+            if estimate > day['duration_minutes'] * 60:
+                raise HTTPException(502, 'AI计划的预计用时超出可训练时间，请重试或调整单次时长')
+    if not generated['weeks']:
+        generated['weeks'] = [f'第{i + 1}周：' + ('校准动作、实际负重与余力' if i == 0 else '依据完成记录评估渐进负荷、恢复和是否需要减量') for i in range(generated['cycle_weeks'])]
+    if len(generated['weeks']) != generated['cycle_weeks']:
+        raise HTTPException(502, 'AI周期安排与周期长度不匹配，请重试')
+    if profile['restrictions'].strip():
+        generated['risk_warnings'].append('已记录伤病或训练限制：' + profile['restrictions'] + '。仅作风险提示，不代表已获医疗许可；避开引起不适的动作。')
     if get_profile() != profile or get_rm() != rm_snapshot:
         raise HTTPException(409, '生成过程中画像或RM已变化，请重新生成')
     with connection() as db:
@@ -306,7 +369,7 @@ async def generate_plan():
         if workouts.revision(db) != training_revision:
             raise HTTPException(409, '生成过程中训练档案已变化，请重新生成')
     draft = save('plan_draft', {**generated, 'model': model, 'profile_snapshot': profile,
-        'coach_profile_snapshot': coach_snapshot, 'training_revision': training_revision,
+        'coach_profile_snapshot': coach_snapshot, 'training_revision': training_revision, 'base_plan_id': base_plan_id,
         'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
     return {**draft, 'generation_id': draft['id'], 'assessment': assess_plan(draft)}
 
@@ -320,7 +383,7 @@ def nutrition_target(profile):
 
 @app.get('/api/plans')
 def get_plans():
-    return [{**p, 'assessment': assess_plan(p)} for p in records('plan') if p.get('source') in ('user', 'ai')]
+    return [{**p, 'assessment': assess_plan(p)} for p in records('plan') if p.get('source') in ('user', 'ai', 'progression')]
 
 @app.post('/api/meals')
 def add_meal(meal: Meal):
@@ -370,14 +433,13 @@ def nutrition_summary():
 @app.delete('/api/meals/{record_id}')
 def delete_meal(record_id: str):
     with connection() as db:
-        existing = db.execute('SELECT payload FROM records WHERE id=? AND kind=?', (record_id, 'meal')).fetchone()
+        existing = db.read('meal', record_id)
         if not existing:
             raise HTTPException(404, '记录不存在')
-        if json.loads(existing['payload'])['day'] != nutrition_today().isoformat():
+        if existing['day'] != nutrition_today().isoformat():
             raise HTTPException(422, '该记录不属于当天，请刷新当天饮食')
-        result = db.execute('DELETE FROM records WHERE id=? AND kind=?', (record_id, 'meal'))
-    if not result.rowcount:
-        raise HTTPException(404, '记录不存在')
+        if not db.remove('meal', record_id):
+            raise HTTPException(404, '记录不存在')
     return {'deleted': True}
 
 @app.post('/api/training')
@@ -418,6 +480,7 @@ def coach_context(message):
 app.include_router(coach.router(connection, Profile, coach_context))
 app.include_router(reminders.router(connection, Profile))
 app.include_router(workouts.router(connection, require_weighted, coach_context))
+app.include_router(progression.router(connection, get_profile, get_rm, assess_plan))
 
 @app.post('/api/media')
 async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: str = Form(''), file: UploadFile = File(...)):
@@ -448,13 +511,29 @@ async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: 
         raise
     finally:
         await file.close()
-    return save('media', {'kind': kind, 'exercise_id': exercise_id, 'bytes': size,
-        'status': 'awaiting_integration', 'message': '文件已保存。识别模型尚未接入，未生成分析结果。',
-        'stored_name': target.name}, key)
+    try:
+        return save('media', {'kind': kind, 'exercise_id': exercise_id, 'bytes': size,
+            'status': 'awaiting_integration', 'message': '文件已保存。识别模型尚未接入，未生成分析结果。',
+            'stored_name': target.name}, key)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
 
 @app.get('/api/media')
 def get_media():
     return records('media')
+
+@app.get('/api/media/{media_id}/file')
+def download_media(media_id: str):
+    with connection() as db:
+        media = db.read('media', media_id)
+    if not media:
+        raise HTTPException(404, '文件不存在')
+    root = (DATA / 'uploads').resolve()
+    target = (root / media['stored_name']).resolve()
+    if target.parent != root or not target.is_file():
+        raise HTTPException(404, '文件不存在')
+    return FileResponse(target)
 
 @app.get('/api/movement/status')
 def movement_status():
@@ -485,4 +564,9 @@ app.mount('/assets', StaticFiles(directory=ROOT/'backend/assets'), name='assets'
 flutter_web = ROOT / 'mobile' / 'build' / 'web'
 if flutter_web.exists():
     app.mount('/app', StaticFiles(directory=flutter_web, html=True), name='flutter')
-app.mount('/', StaticFiles(directory=ROOT / 'preview', html=True), name='preview')
+@app.get('/', include_in_schema=False)
+def index():
+    if flutter_web.exists():
+        return RedirectResponse('/app/')
+    return HTMLResponse('<!doctype html><meta charset="utf-8"><title>练伴</title>'
+        '<h1>练伴</h1><p>后端已运行，请使用安卓 App 登录。浏览器端需先构建 Flutter Web。</p>')
