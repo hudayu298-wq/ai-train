@@ -15,25 +15,32 @@ module = importlib.import_module('app')
 client = TestClient(module.app)
 PROFILE = {'age': 28, 'height_cm': 175, 'weight_kg': 70, 'sex': 'male',
            'goal': 'muscle_gain', 'experience': 'beginner', 'days': 3}
+PLAN = {'name': '我的周计划', 'days': [{'name': '周一', 'exercises': [
+    {'exercise_id': 'bench', 'weight_kg': 75, 'sets': 4, 'reps': 5, 'rest_seconds': 150}]}]}
 
 @pytest.fixture(autouse=True)
 def isolate_records():
     with module.connection() as db:
         db.execute('DELETE FROM records')
 
-def test_profile_and_versioned_plan():
+def test_user_plan_is_preserved_and_versioned():
     assert client.put('/api/profile', json=PROFILE).status_code == 200
-    first = client.post('/api/plans').json()
-    second = client.post('/api/plans').json()
+    first = client.post('/api/plans', json=PLAN).json()
+    second = client.post('/api/plans', json=PLAN).json()
     assert first['id'] != second['id']
-    assert len(first['days']) == 3
-    assert {x['exercise_id'] for x in first['days'][0]['exercises']} == {'bench', 'squat', 'deadlift'}
-    assert first['nutrition']['protein'] == 112
-    assert first['profile_snapshot']['weight_kg'] == 70
+    assert len(first['days']) == 1
+    assert first['days'][0]['exercises'][0]['weight_kg'] == 75
+    assert first['days'][0]['exercises'][0]['sets'] == 4
+    assert first['days'][0]['exercises'][0]['rest_seconds'] == 150
+    assert first['source'] == 'user'
+    assert first['assessment']['items'][0]['status'] == 'missing_rm'
+    assert client.post('/api/plans').status_code == 422  # No automatic generation.
 
-def test_restrictions_block_template():
+def test_restrictions_require_review_but_keep_user_plan():
     client.put('/api/profile', json={**PROFILE, 'restrictions': '肩部疼痛'})
-    assert client.post('/api/plans').status_code == 409
+    result = client.post('/api/plans', json=PLAN)
+    assert result.status_code == 200
+    assert result.json()['assessment']['items'][0]['status'] == 'review_required'
     client.put('/api/profile', json=PROFILE)
 
 def test_nutrients_and_delete():
@@ -75,7 +82,7 @@ def test_validation_and_preview():
 
 def test_today_meal_groups_and_target_comparison():
     client.put('/api/profile', json=PROFILE)
-    plan = client.post('/api/plans').json()
+    target = module.nutrition_target(PROFILE)
     client.post('/api/meals', json={'food_id': 'rice', 'grams': 150, 'meal_type': 'breakfast'})
     client.post('/api/meals', json={'food_id': 'egg', 'grams': 100, 'meal_type': 'breakfast'})
     client.post('/api/meals', json={'food_id': 'chicken', 'grams': 100, 'meal_type': 'lunch'})
@@ -83,7 +90,7 @@ def test_today_meal_groups_and_target_comparison():
     assert summary['totals'] == {'kcal': 494.0, 'protein': 47.5, 'fat': 14.7, 'carbs': 40.0}
     assert summary['groups'][0]['totals']['kcal'] == 329
     assert summary['groups'][1]['totals']['kcal'] == 165
-    assert summary['target'] == plan['nutrition']
+    assert summary['target'] == target
     assert summary['comparison']['protein']['remaining'] == 64.5
     assert summary['comparison']['kcal']['excess'] == 0
 
@@ -103,7 +110,6 @@ def test_rollover_excludes_old_food_and_rejects_backdating(monkeypatch):
 
 def test_excess_and_delete_recalculates_totals():
     client.put('/api/profile', json=PROFILE)
-    client.post('/api/plans')
     meal = client.post('/api/meals', json={'food_id': 'rice', 'grams': 3000, 'meal_type': 'dinner'}).json()
     comparison = client.get('/api/nutrition/today').json()['comparison']['kcal']
     assert comparison['excess'] > 0
@@ -112,15 +118,61 @@ def test_excess_and_delete_recalculates_totals():
     client.delete('/api/meals/' + meal['id'])
     assert client.get('/api/nutrition/today').json()['totals']['kcal'] == 0
 
-def test_missing_or_stale_targets_do_not_claim_zero_requirement():
+def test_nutrition_targets_update_without_a_training_plan():
     assert client.get('/api/nutrition/today').json()['target_status'] == 'missing'
     client.put('/api/profile', json=PROFILE)
-    client.post('/api/plans')
+    assert client.get('/api/nutrition/today').json()['target']['protein'] == 112
     client.put('/api/profile', json={**PROFILE, 'weight_kg': 75})
     summary = client.get('/api/nutrition/today').json()
-    assert summary['target_status'] == 'stale'
-    assert summary['comparison']['kcal']['target'] is None
-    assert summary['comparison']['protein']['remaining'] is None
+    assert summary['target_status'] == 'ready'
+    assert summary['target']['protein'] == 120
+    assert client.get('/api/plans').json() == []
+
+def test_rm_reference_and_draft_assessment_do_not_change_plan():
+    rm = client.post('/api/rm', json={'exercise_id':'bench','weight_kg':87,'reps':5,
+        'measured_on':module.nutrition_today().isoformat(),'confirmed_maximum':True}).json()
+    assert rm['reference_1rm_kg'] == 100
+    result = client.post('/api/plans/assess', json=PLAN).json()
+    assert result['items'][0]['load_percent'] == 75
+    assert result['items'][0]['reference_1rm_kg'] == 100
+    assert result['items'][0]['status'] == 'reference_only'
+    assert client.get('/api/plans').json() == []
+    saved = client.post('/api/plans', json=PLAN).json()
+    assert saved['days'][0]['exercises'][0]['weight_kg'] == 75
+
+def test_rm_evaluation_flags_high_load_and_rejects_unsupported_rm():
+    from copy import deepcopy
+    client.post('/api/rm',json={'exercise_id':'bench','weight_kg':100,'reps':1,
+        'measured_on':module.nutrition_today().isoformat(),'confirmed_maximum':True})
+    plan = deepcopy(PLAN)
+    plan['days'][0]['exercises'][0]['weight_kg'] = 95
+    assert client.post('/api/plans/assess',json=plan).json()['items'][0]['status'] == 'high_relative_load'
+    plan['days'][0]['exercises'][0]['weight_kg'] = 105
+    assert client.post('/api/plans/assess',json=plan).json()['items'][0]['status'] == 'above_reference'
+    assert client.post('/api/rm',json={'exercise_id':'bench','weight_kg':80,'reps':11,
+        'measured_on':module.nutrition_today().isoformat(),'confirmed_maximum':True}).status_code == 422
+
+def test_rm_expiry_future_dates_and_nonmaximum_sets(monkeypatch):
+    monkeypatch.setattr(module,'nutrition_today',lambda:date(2026,10,11))
+    fields={'exercise_id':'bench','weight_kg':100,'reps':1,'confirmed_maximum':True}
+    assert client.post('/api/rm',json={**fields,'measured_on':'2026-10-12'}).status_code == 422
+    client.post('/api/rm',json={**fields,'measured_on':'2026-06-01'})
+    assert client.post('/api/plans/assess',json=PLAN).json()['items'][0]['status'] == 'stale_rm'
+    client.post('/api/rm',json={**fields,'measured_on':'2026-10-11','confirmed_maximum':False})
+    assert client.post('/api/plans/assess',json=PLAN).json()['items'][0]['status'] == 'missing_rm'
+
+def test_rm_is_matched_by_variant_and_measurement_date(monkeypatch):
+    monkeypatch.setattr(module,'nutrition_today',lambda:date(2026,10,11))
+    fields={'exercise_id':'bench','reps':1,'confirmed_maximum':True}
+    client.post('/api/rm',json={**fields,'weight_kg':100,'measured_on':'2026-10-10'})
+    client.post('/api/rm',json={**fields,'weight_kg':80,'measured_on':'2026-10-01'})
+    assert client.get('/api/rm').json()[0]['weight_kg'] == 100
+    plan={'name':'深蹲','days':[{'name':'周二','exercises':[{**PLAN['days'][0]['exercises'][0],'exercise_id':'squat'}]}]}
+    assert client.post('/api/plans/assess',json=plan).json()['items'][0]['status'] == 'missing_rm'
+
+def test_old_generated_templates_are_not_active_user_plans():
+    module.save('plan',{'status':'starter_template','days':[]})
+    assert client.get('/api/plans').json() == []
 
 def test_legacy_meals_are_not_silently_assigned_to_breakfast():
     module.save('meal', {'day': module.nutrition_today().isoformat(), 'name': '旧记录',

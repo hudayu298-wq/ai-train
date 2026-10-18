@@ -67,7 +67,7 @@ class Profile(BaseModel):
     sex: Literal['male', 'female']
     goal: Literal['fat_loss', 'muscle_gain']
     experience: Literal['beginner', 'intermediate'] = 'beginner'
-    days: int = Field(ge=2, le=3)
+    days: int = Field(ge=1, le=7)
     restrictions: str = Field(default='', max_length=1000)
 
 class Meal(BaseModel):
@@ -94,6 +94,81 @@ class Training(BaseModel):
     pain: bool = False
     day: date = Field(default_factory=date.today)
 
+class RMRecord(BaseModel):
+    exercise_id: Literal['bench', 'squat', 'deadlift']
+    weight_kg: float = Field(gt=0, le=500)
+    reps: int = Field(ge=1, le=10)
+    measured_on: date
+    confirmed_maximum: bool
+
+class PlanExercise(BaseModel):
+    exercise_id: Literal['bench', 'squat', 'deadlift']
+    weight_kg: float = Field(gt=0, le=500)
+    sets: int = Field(ge=1, le=20)
+    reps: int = Field(ge=1, le=100)
+    rest_seconds: int = Field(ge=0, le=1800)
+
+class PlanDay(BaseModel):
+    name: str = Field(min_length=1, max_length=40, pattern=r'.*\S.*')
+    exercises: list[PlanExercise] = Field(min_length=1, max_length=20)
+
+class UserPlan(BaseModel):
+    name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
+    days: list[PlanDay] = Field(min_length=1, max_length=7)
+
+# NSCA Training Load Chart: generic max-repetition references, not individual limits.
+RM_FRACTIONS = {1: 1.0, 2: .95, 3: .93, 4: .90, 5: .87, 6: .85, 7: .83, 8: .80, 9: .77, 10: .75}
+
+@app.post('/api/rm')
+def add_rm(rm: RMRecord):
+    if rm.measured_on > nutrition_today():
+        raise HTTPException(422, 'RM日期不能晚于今天')
+    estimate = rm.weight_kg / RM_FRACTIONS[rm.reps] if rm.confirmed_maximum else None
+    return save('rm', {**rm.model_dump(mode='json'), 'reference_1rm_kg': round(estimate, 2) if estimate else None,
+        'method': 'self_reported_1rm' if rm.reps == 1 else 'nsca_rm_table_estimate', 'rule_version': 'rm-0.1'})
+
+@app.get('/api/rm')
+def get_rm():
+    latest = {}
+    for record in records('rm'):
+        key = record['exercise_id']
+        if key not in latest or record['measured_on'] > latest[key]['measured_on']:
+            latest[key] = record
+    return list(latest.values())
+
+def assess_plan(plan):
+    baselines = {r['exercise_id']: r for r in get_rm()}
+    profile = get_profile()
+    result = []
+    for day in plan['days']:
+        for exercise in day['exercises']:
+            item = {'day': day['name'], 'exercise_id': exercise['exercise_id'],
+                'volume_kg': round(exercise['weight_kg'] * exercise['sets'] * exercise['reps'], 1),
+                'load_percent': None, 'rm_id': None, 'reference_1rm_kg': None}
+            rm = baselines.get(exercise['exercise_id'])
+            if profile and profile['restrictions'].strip():
+                item.update(status='review_required', message='存在训练限制，负荷评估需专业审核。')
+            elif not rm or not rm['confirmed_maximum']:
+                item.update(status='missing_rm', message='缺少确认的RM数据，暂不评估负荷。')
+            elif (nutrition_today() - date.fromisoformat(rm['measured_on'])).days > 90:
+                item.update(status='stale_rm', message='RM数据超过90天，请更新后再评估。')
+            else:
+                raw_percent = exercise['weight_kg'] / rm['reference_1rm_kg'] * 100
+                item.update(rm_id=rm['id'], reference_1rm_kg=rm['reference_1rm_kg'],
+                    load_percent=round(raw_percent, 1), rm_method=rm['method'], measured_on=rm['measured_on'])
+                reference = RM_FRACTIONS.get(exercise['reps'])
+                if raw_percent > 100:
+                    item.update(status='above_reference', message='计划重量超过当前1RM参考值，请复核重量和RM数据。')
+                elif reference is None:
+                    item.update(status='reference_only', message='已展示相对负荷；超过10次的组不做次数匹配推断。')
+                elif raw_percent > reference * 100:
+                    item.update(status='high_relative_load', message='重量高于该次数的通用RM参考，完成难度可能较高；结合余力与疲劳复核。')
+                else:
+                    item.update(status='reference_only', message='已展示相对负荷；RM不能单独判定计划合理性或动作安全。')
+            result.append(item)
+    return {'rule_version': 'rm-0.1', 'items': result,
+        'note': '按用户提供的RM与通用次数表评估，不调整计划；多次RM换算为估算1RM。'}
+
 @app.get('/api/health')
 def health():
     return {'status': 'ok', 'mode': 'local_single_user', 'vision_enabled': False}
@@ -112,31 +187,31 @@ def put_profile(profile: Profile):
     return save('profile', profile.model_dump(), 'local-profile')
 
 @app.post('/api/plans')
-def generate_plan():
-    profile = get_profile()
-    if not profile:
-        raise HTTPException(409, '请先保存用户画像')
-    if profile['restrictions'].strip():
-        raise HTTPException(409, '你填写了伤病或训练限制，当前模板需要教练审核后才能生成。')
-    # Conservative starter template. No automatic load prescription.
-    days = []
-    for i in range(profile['days']):
-        days.append({'name': f'训练日 {i+1}', 'rest_note': '训练日之间至少安排一个休息日', 'exercises': [
-            {'exercise_id': e['id'], 'name': e['name'], 'sets': 2 if e['id'] == 'deadlift' else 3,
-             'reps': '5', 'rest_seconds': 180, 'load': '选择可控重量，保留约3次余力'} for e in EXERCISES]})
+def save_user_plan(plan: UserPlan):
+    payload = plan.model_dump()
+    names = {e['id']: e['name'] for e in EXERCISES}
+    for day in payload['days']:
+        for exercise in day['exercises']:
+            exercise['name'] = names[exercise['exercise_id']]
+    saved = save('plan', {**payload, 'created_on': nutrition_today().isoformat(), 'source': 'user',
+        'note': '由用户制定；RM评估仅提供参考，不自动修改动作、重量或组次。'})
+    return {**saved, 'assessment': assess_plan(saved)}
+
+@app.post('/api/plans/assess')
+def assess_draft(plan: UserPlan):
+    return assess_plan(plan.model_dump())
+
+def nutrition_target(profile):
     bmr = 10 * profile['weight_kg'] + 6.25 * profile['height_cm'] - 5 * profile['age'] + (5 if profile['sex'] == 'male' else -161)
     kcal = round(bmr * 1.4 + (-250 if profile['goal'] == 'fat_loss' else 200))
     protein = round(profile['weight_kg'] * 1.6)
     fat = round(profile['weight_kg'] * 0.8)
     carbs = max(0, round((kcal - protein * 4 - fat * 9) / 4))
-    return save('plan', {'created_on': date.today().isoformat(), 'profile_snapshot': profile,
-        'rule_version': 'starter-0.1', 'status': 'starter_template', 'days': days,
-        'nutrition': {'kcal': kcal, 'protein': protein, 'fat': fat, 'carbs': carbs},
-        'note': '起始模板与估算目标，尚未经专业审核；根据执行与体重趋势复核。活动系数暂设1.4。'})
+    return {'kcal': kcal, 'protein': protein, 'fat': fat, 'carbs': carbs}
 
 @app.get('/api/plans')
 def get_plans():
-    return records('plan')
+    return [{**p, 'assessment': assess_plan(p)} for p in records('plan') if p.get('source') == 'user']
 
 @app.post('/api/meals')
 def add_meal(meal: Meal):
@@ -166,17 +241,12 @@ def nutrition_summary():
         if kind == 'unassigned' and not entries:
             continue
         groups.append({'meal_type': kind, 'label': label, 'items': entries, 'totals': nutrient_totals(entries)})
-    plans = records('plan')
     profile = get_profile()
-    current = plans[0] if plans else None
     target_status = 'missing'
     target = None
-    if current and profile:
-        if current['profile_snapshot'] == profile:
-            target = current['nutrition']
-            target_status = 'ready'
-        else:
-            target_status = 'stale'
+    if profile:
+        target = nutrition_target(profile)
+        target_status = 'ready'
     comparisons = {}
     for key in NUTRIENTS:
         goal = target[key] if target else None

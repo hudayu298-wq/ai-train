@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http_parser/http_parser.dart';
 
 import 'live/live_session.dart';
+import 'user_plan_editor.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -40,6 +41,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   String? error;
   Map<String, dynamic>? catalog;
   List<dynamic> plans = [], training = [], meals = [], media = [];
+  List<dynamic> rmRecords = [];
   Map<String, dynamic>? nutrition;
   Timer? nutritionTimer;
   String mealType = 'breakfast';
@@ -174,6 +176,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       request('/training'),
       request('/nutrition/today'),
       request('/media'),
+      request('/rm'),
     ]);
     if (!mounted) return;
     setState(() {
@@ -182,6 +185,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       nutrition = Map<String, dynamic>.from(result[2]);
       meals = nutrition!['records'];
       media = result[3];
+      rmRecords = result[4];
     });
   }
 
@@ -307,14 +311,13 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ],
   );
   Widget planPanel() {
-    if (plans.isEmpty) return panel('当前计划', [const Text('先在画像页保存资料，再生成起始计划。')]);
+    if (plans.isEmpty) {
+      return panel('我的训练计划', [const Text('在训练页自己填写计划，再提供RM数据进行评估。')]);
+    }
     final p = plans.first;
-    return panel('当前起始计划', [
+    return panel('我的计划 · ${p['name']}', [
       Text(p['note']),
       const SizedBox(height: 12),
-      Text(
-        '营养目标 ${p['nutrition']['kcal']} kcal · 蛋白质 ${p['nutrition']['protein']} g',
-      ),
       ...[
         for (final d in p['days'])
           Padding(
@@ -329,15 +332,20 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 ...[
                   for (final e in d['exercises'])
                     Text(
-                      '${e['name']} · ${e['sets']} × ${e['reps']} · 休息 ${e['rest_seconds']} 秒',
+                      '${e['name']} · ${e['weight_kg']} kg · ${e['sets']} × ${e['reps']} · 休息 ${e['rest_seconds']} 秒',
                     ),
                 ],
-                Text(d['rest_note']),
-                const Text('选择可控重量，保留约3次余力。'),
               ],
             ),
           ),
       ],
+      for (final item in p['assessment']['items'])
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(
+            '${item['day']} · ${exercises[item['exercise_id']]}：${item['load_percent'] == null ? '暂无RM评估' : '${item['load_percent']}% 1RM参考'}\n${item['message']}',
+          ),
+        ),
     ]);
   }
 
@@ -355,10 +363,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       'intermediate': '有训练经验',
     }, (v) => experience = v),
     select('每周训练天数', '$days', {
+      '1': '1 天',
       '2': '2 天',
       '3': '3 天',
+      '4': '4 天',
+      '5': '5 天',
+      '6': '6 天',
+      '7': '7 天',
     }, (v) => days = int.parse(v)),
-    field('伤病或训练限制（填写后需专业审核）', restrictions, numeric: false),
+    field('伤病或训练限制（用于评估提示）', restrictions, numeric: false),
     action('保存画像', () async {
       await request(
         '/profile',
@@ -375,16 +388,21 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         },
       );
       notify('画像已保存');
-    }),
-    action('生成起始计划', () async {
-      await request('/plans', method: 'POST');
       await refresh();
-      notify('已生成起始模板');
     }),
   ]);
   Widget trainingPage() => Column(
     children: [
       planPanel(),
+      UserPlanEditor(
+        post: (path, body) => request(path, method: 'POST', body: body),
+        onSaved: refresh,
+        exercises: exercises,
+        rmRecords: rmRecords,
+        currentPlan: plans.isEmpty
+            ? null
+            : Map<String, dynamic>.from(plans.first),
+      ),
       panel('记录负重训练', [
         exerciseSelect(),
         field('杠铃总重量 / kg', load),
@@ -433,12 +451,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Widget nutritionPage() => Column(
     children: [
       panel('当天营养 · ${nutrition?['day'] ?? ''}', [
-        const Text('按北京时间计算当天摄入，目标来自当前计划。'),
+        const Text('按北京时间计算当天摄入，营养目标根据当前画像估算。'),
         if (nutrition?['target_status'] != 'ready')
           Text(
             nutrition?['target_status'] == 'stale'
-                ? '画像已修改，请重新生成计划以更新营养目标。'
-                : '先保存画像并生成计划，才能对比每日目标。',
+                ? '请刷新以更新营养目标。'
+                : '先保存画像，才能估算每日营养目标。',
           ),
         for (final entry in {
           'kcal': '热量',
@@ -636,20 +654,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         Expanded(
           child: catalog == null
               ? const Center(child: Text('连接服务中；连接失败时请启动后端并点击刷新。'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: [
-                        overview,
-                        profilePage,
-                        trainingPage,
-                        nutritionPage,
-                        analysisPage,
-                      ][tab](),
-                    ),
-                  ),
+              : IndexedStack(
+                  index: tab,
+                  children: [
+                    for (final page in [
+                      overview,
+                      profilePage,
+                      trainingPage,
+                      nutritionPage,
+                      analysisPage,
+                    ])
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(18),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 760),
+                            child: page(),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
         ),
       ],
