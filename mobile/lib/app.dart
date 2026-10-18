@@ -8,6 +8,8 @@ import 'package:http_parser/http_parser.dart';
 
 import 'live/live_session.dart';
 import 'user_plan_editor.dart';
+import 'profile_setup.dart';
+import 'fitness_onboarding.dart';
 import 'library_page.dart';
 import 'coach_chat.dart';
 import 'coach_avatar.dart';
@@ -18,20 +20,18 @@ import 'coaches/coach_picker.dart';
 import 'coaches/coach_persona.dart';
 import 'ui_theme.dart';
 import 'workout_log.dart';
-
-const apiBase = String.fromEnvironment(
-  'API_BASE',
-  defaultValue: 'http://127.0.0.1:8000',
-);
+import 'auth/session.dart';
+import 'auth/auth_gate.dart';
+import 'auth/account_page.dart';
 
 class LiftLab extends StatelessWidget {
   const LiftLab({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'LiftLab',
+    title: '练伴',
     debugShowCheckedModeBanner: false,
     theme: buildAppTheme(),
-    home: const Home(),
+    home: const AuthGate(),
   );
 }
 
@@ -51,11 +51,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   List<dynamic> workouts = [];
   Map<String, dynamic>? nutrition;
   Map<String, dynamic>? coachProfile;
+  bool onboardingChecked = false;
   int chatRefreshToken = 0;
   int petReminderRevision = 0;
   String? petReminderText;
   Timer? nutritionTimer;
-  final coachReminders = CoachReminders();
+  late final coachReminders = CoachReminders(ownerId: authSession.user?['id']);
   String mealType = 'breakfast';
   static const mealTypes = {
     'breakfast': '早餐',
@@ -208,24 +209,28 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     }
     final response =
         await http.Response.fromStream(
-          await req.send().timeout(
-            Duration(
-              seconds:
-                  path == '/plans/generate' ||
-                      path == '/movement/analyze' ||
-                      path == '/coach/messages' ||
-                      path.endsWith('/review')
-                  ? 110
-                  : 20,
-            ),
-          ),
+          await authSession
+              .send(req)
+              .timeout(
+                Duration(
+                  seconds:
+                      path == '/plans/generate' ||
+                          path == '/movement/analyze' ||
+                          path == '/coach/messages' ||
+                          path.endsWith('/review') ||
+                          path.endsWith('/progression')
+                      ? 110
+                      : 20,
+                ),
+              ),
         ).timeout(
           Duration(
             seconds:
                 path == '/plans/generate' ||
                     path == '/movement/analyze' ||
                     path == '/coach/messages' ||
-                    path.endsWith('/review')
+                    path.endsWith('/review') ||
+                    path.endsWith('/progression')
                 ? 110
                 : 20,
           ),
@@ -255,6 +260,14 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> initialize() => perform(() async {
+    await coachReminders.initialize();
+    final reminderSettings = Map<String, dynamic>.from(
+      await request('/coach/reminders'),
+    );
+    await coachReminders.save(
+      ReminderSettings.fromJson(reminderSettings),
+      askPermission: false,
+    );
     catalog = Map<String, dynamic>.from(
       await request('/catalog?extended=true'),
     );
@@ -262,7 +275,35 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     await loadCoachProfile();
     chatRefreshToken++;
     await refresh();
+    if (!onboardingChecked) {
+      final setup = await request('/onboarding');
+      onboardingChecked = true;
+      if (setup is Map && setup['required'] == true && mounted) {
+        await openOnboarding();
+      }
+    }
   });
+
+  Future<void> openOnboarding() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FitnessOnboarding(
+          request: (path, method, body) =>
+              request(path, method: method, body: body),
+          exercises: exercises,
+          details: workoutExercises,
+          onFinished: () async {
+            await loadCoachProfile();
+            await refresh();
+          },
+        ),
+      ),
+    );
+    if (mounted) {
+      await loadCoachProfile();
+      await refresh();
+    }
+  }
 
   Future<void> loadCoachProfile() async {
     final result = Map<String, dynamic>.from(await request('/coach/profile'));
@@ -347,6 +388,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   void openLibrary({required String kind}) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => LibraryPage(
+        canManage: authSession.user?['role'] == 'admin',
         assetBase: apiBase,
         kind: kind,
         request: (path, method, body) =>
@@ -458,7 +500,25 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     final p = plans.first;
     return panel('我的计划 · ${p['name']}', [
       Text(p['note']),
-      if (p['source'] == 'ai') ...[
+      Text(
+        '当前版本 ${p['version'] ?? 1} · 第${p['cycle_week'] ?? 1}/${p['cycle_weeks'] ?? 4}周 · 每周${(p['days'] as List).length}次',
+      ),
+      if (p['cycle_complete'] == true) const Text('本周期已完成，可根据最新画像生成下一周期。'),
+      if (p['latest_change'] != null)
+        PlanChangeCard(
+          event: Map<String, dynamic>.from(p['latest_change']),
+          onUndo: () => perform(() async {
+            await request(
+              '/plans/changes/${p['latest_change']['id']}/undo',
+              method: 'POST',
+              body: {},
+            );
+            await refresh();
+          }),
+        ),
+      for (final week in p['weeks'] ?? []) Text('$week'),
+      for (final warning in p['risk_warnings'] ?? []) Text('风险提示：$warning'),
+      if (p['rationale'] != null) ...[
         Text('制定理由：${p['rationale']}'),
         Text('热身：${p['warmup']}'),
         Text('恢复：${p['recovery']}'),
@@ -473,7 +533,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  d['name'],
+                  '${d['name']}${d['start_time'] == null ? '' : ' · ${d['start_time']}'}${d['duration_minutes'] == null ? '' : ' · ${d['duration_minutes']}分钟'}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 ...[
@@ -490,83 +550,46 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Text(
-            '${item['day']} · ${exercises[item['exercise_id']]}：${item['load_percent'] == null ? '暂无RM评估' : '${item['load_percent']}% 1RM参考'}\n${item['message']}',
+            '${item['day']} · ${exercises[item['exercise_id']]}：${item['load_percent'] == null ? '暂无RM评估' : '${item['load_percent']}% 1RM参考'}\n${item['message']}${item['risk_warning'] == null ? '' : '\n风险提示：${item['risk_warning']}'}',
           ),
         ),
     ]);
   }
 
-  Widget profilePage() => panel('我的用户画像', [
-    ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: CoachAvatar(size: 48, coachId: coachReminders.settings.coachId),
-      title: Text('${coachReminders.settings.coachName} · 私教提醒'),
-      subtitle: const Text('设置训练日、训练时间和用餐提醒'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => setState(() => tab = 5),
-    ),
-    const Divider(height: 24),
-    trainingMemoryPanel(),
-    const Text('对话中的明确事实和确认完成的训练共同完善画像，你也可以在下方调整。'),
-    if (coachProfile != null) ...[
-      const SizedBox(height: 12),
-      Text(
-        coachProfile!['complete'] == true
-            ? '基础画像已完整，可用于训练计划和饮食目标。'
-            : '待补充：${(coachProfile!['missing_fields'] as List).map((k) => coachProfile!['labels'][k]).join('、')}',
-      ),
-      const SizedBox(height: 12),
-    ],
-    field('年龄（18岁及以上）', age),
-    field('身高 / cm', height),
-    field('体重 / kg', weight),
-    select('用于代谢估算的性别', sex, {'male': '男性', 'female': '女性'}, (v) => sex = v),
-    select('目标', goal, {
-      'muscle_gain': '基础增肌',
-      'fat_loss': '减脂',
-    }, (v) => goal = v),
-    select('经验', experience, {
-      'beginner': '新手',
-      'intermediate': '有训练经验',
-    }, (v) => experience = v),
-    select('每周训练天数', '$days', {
-      '1': '1 天',
-      '2': '2 天',
-      '3': '3 天',
-      '4': '4 天',
-      '5': '5 天',
-      '6': '6 天',
-      '7': '7 天',
-    }, (v) => days = int.parse(v)),
-    field('伤病或训练限制（用于评估提示）', restrictions, numeric: false),
-    field('饮食偏好', dietaryPreferences, numeric: false),
-    field('可用器械', equipment, numeric: false),
-    field('训练偏好', trainingPreferences, numeric: false),
-    field('时间安排', schedule, numeric: false),
-    action('保存画像', () async {
-      await request(
-        '/coach/profile',
-        method: 'PATCH',
-        body: {
-          if (age.text.trim().isNotEmpty) 'age': integer(age),
-          if (height.text.trim().isNotEmpty) 'height_cm': number(height),
-          if (weight.text.trim().isNotEmpty) 'weight_kg': number(weight),
-          if (sex.isNotEmpty) 'sex': sex,
-          if (goal.isNotEmpty) 'goal': goal,
-          if (experience.isNotEmpty) 'experience': experience,
-          if (days > 0) 'days': days,
-          'restrictions': restrictions.text,
-          'dietary_preferences': dietaryPreferences.text,
-          'equipment': equipment.text,
-          'training_preferences': trainingPreferences.text,
-          'schedule': schedule.text,
+  Widget profilePage() => Column(
+    children: [
+      panel('我的用户画像', [
+        trainingMemoryPanel(),
+        TextButton.icon(
+          onPressed: openOnboarding,
+          icon: const Icon(Icons.auto_awesome),
+          label: const Text('重新配置画像并生成计划'),
+        ),
+        if (coachProfile != null)
+          ProfileSetup(
+            key: ValueKey(jsonEncode(coachProfile!['facts'])),
+            facts: Map<String, dynamic>.from(coachProfile!['facts']),
+            request: (path, method, body) =>
+                request(path, method: method, body: body),
+            onSaved: () async {
+              await loadCoachProfile();
+              await refresh();
+              notify('画像已保存');
+            },
+          ),
+      ]),
+      StrengthProfile(
+        request: (path, method, body) =>
+            request(path, method: method, body: body),
+        exercises: exercises,
+        records: rmRecords,
+        onSaved: () async {
+          await loadCoachProfile();
+          await refresh();
         },
-      );
-      notify('画像已保存');
-      await loadCoachProfile();
-      await refresh();
-    }),
-  ]);
+      ),
+    ],
+  );
   Map<String, Map<String, dynamic>> get workoutExercises => {
     for (final e in catalog?['exercises'] ?? [])
       if (e['type'] == 'weighted') '${e['id']}': Map<String, dynamic>.from(e),
@@ -585,14 +608,23 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               request(path, method: method, body: body),
           exercises: workoutExercises,
           coachId: coachReminders.settings.coachId,
+          currentPlan: plans.isEmpty
+              ? null
+              : Map<String, dynamic>.from(plans.first),
           liveExerciseId: liveId,
           detectedSets: detected,
           liveDurationMinutes: minutes,
           liveCaptureId: captureId,
           initialExerciseId: exercise,
           onSaved: () async {
+            final previousPlan = plans.isEmpty ? null : plans.first['id'];
             await loadCoachProfile();
             await refresh();
+            if (plans.isNotEmpty &&
+                plans.first['id'] != previousPlan &&
+                plans.first['source'] == 'progression') {
+              notify('下次训练计划已更新，训练计划页可查看差异或撤销');
+            }
           },
         ),
       ),
@@ -629,7 +661,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 const Text('近期有训练不适记录；下次先确认当前状态，暂停引起不适的动作。'),
             ],
             TextButton(
-              onPressed: () => setState(() => tab = 2),
+              onPressed: () => setState(() => tab = 6),
               child: const Text('查看记录与复盘'),
             ),
           ],
@@ -642,6 +674,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     children: [
       planPanel(),
       UserPlanEditor(
+        key: ValueKey(
+          'current-plan-${plans.isEmpty ? 'none' : plans.first['id']}',
+        ),
+        compact: true,
         post: (path, body) => request(path, method: 'POST', body: body),
         onSaved: refresh,
         exercises: exercises,
@@ -655,6 +691,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             ? null
             : Map<String, dynamic>.from(plans.first),
       ),
+    ],
+  );
+
+  Widget historyPage() => Column(
+    children: [
       panel('训练记录与复盘', [
         const Text('每次训练完成后确认实际组次与感受，私教会据此了解你的表现并给出下次建议。'),
         FilledButton.icon(
@@ -949,7 +990,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         ),
       );
     final response = await http.Response.fromStream(
-      await req.send().timeout(const Duration(minutes: 3)),
+      await authSession.send(req).timeout(const Duration(minutes: 3)),
     );
     final result = jsonDecode(response.body);
     if (response.statusCode >= 400) throw Exception(result['detail']);
@@ -957,7 +998,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     notify(result['message']);
   }
 
-  static const pageTitles = ['AI 私教', '我', '训练计划', '饮食', 'AI 陪训', '私教提醒'];
+  static const pageTitles = [
+    'AI 私教',
+    '我',
+    '训练计划',
+    '饮食',
+    'AI 陪训',
+    '私教提醒',
+    '训练记录与复盘',
+  ];
 
   void navigate(int destination) {
     Navigator.of(context).pop();
@@ -1065,7 +1114,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'LiftLab',
+                          '练伴',
                           style: TextStyle(
                             fontSize: 21,
                             fontWeight: FontWeight.w700,
@@ -1090,6 +1139,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               (0, Icons.chat_bubble_outline, 'AI 私教'),
               (3, Icons.restaurant_outlined, '饮食'),
               (2, Icons.fitness_center, '训练计划'),
+              (6, Icons.history, '训练记录与复盘'),
               (4, Icons.videocam_outlined, 'AI 陪训'),
               (1, Icons.person_outline, '我'),
               (5, Icons.notifications_outlined, '私教提醒'),
@@ -1102,6 +1152,16 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 onTap: () => navigate(item.$1),
               ),
             const Divider(height: 32),
+            ListTile(
+              leading: const Icon(Icons.manage_accounts_outlined),
+              title: const Text('账号与安全'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const AccountPage()),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.description_outlined),
               title: const Text('私教提示词'),
@@ -1180,6 +1240,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(18),
+                child: catalog == null ? const Text('连接服务中…') : historyPage(),
               ),
             ],
           ),

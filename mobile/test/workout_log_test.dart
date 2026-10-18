@@ -45,6 +45,7 @@ void main() {
       int refreshes = 0;
       Future<dynamic> request(String path, String method, Object? body) async {
         if (path.endsWith('/review')) throw Exception('未配置模型');
+        if (path.endsWith('/progression')) throw Exception('未配置模型');
         payloads.add(jsonDecode(jsonEncode(body)) as Map);
         if (payloads.length == 1) throw Exception('网络中断');
         return response(body as Map);

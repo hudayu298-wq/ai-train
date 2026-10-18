@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+
+import 'profile_setup.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 typedef WorkoutRequest = Future<dynamic> Function(String, String, Object?);
@@ -44,6 +47,10 @@ class WorkoutReview extends StatelessWidget {
           const SizedBox(height: 12),
           Text(summary['note'], style: Theme.of(context).textTheme.bodySmall),
         ],
+        if (record['plan_progression'] != null)
+          PlanChangeCard(
+            event: Map<String, dynamic>.from(record['plan_progression']),
+          ),
         if (ai != null) ...[
           const Divider(height: 28),
           Text('AI 私教复盘', style: Theme.of(context).textTheme.titleMedium),
@@ -157,6 +164,7 @@ class WorkoutLogPage extends StatefulWidget {
     this.liveDurationMinutes,
     this.liveCaptureId,
     this.initialExerciseId,
+    this.currentPlan,
   });
   final WorkoutRequest request;
   final Future<void> Function() onSaved;
@@ -167,6 +175,7 @@ class WorkoutLogPage extends StatefulWidget {
   final int? liveDurationMinutes;
   final String? liveCaptureId;
   final String? initialExerciseId;
+  final Map<String, dynamic>? currentPlan;
   @override
   State<WorkoutLogPage> createState() => _WorkoutLogPageState();
 }
@@ -179,7 +188,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   String? selected, error, reviewError;
   String category = '';
   bool loading = true, busy = false, reviewing = false;
-  Map<String, dynamic>? saved, pending;
+  Map<String, dynamic>? saved, pending, progression;
+  String? planDay, planId, progressionError;
+  String readiness = 'normal';
+  bool completedPlanDay = false, progressing = false;
   Future<void> persistence = Future.value();
   bool get locked => busy || pending != null || saved != null;
   bool restored = false;
@@ -211,6 +223,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
             widget.liveExerciseId != null &&
             draftCaptureId != widget.liveCaptureId;
         day = d['day'];
+        planDay = d['plan_day'];
+        planId = d['plan_id'];
+        readiness = d['readiness'] ?? 'normal';
+        completedPlanDay = d['completed_plan_day'] == true;
         duration.text = d['duration'] ?? '';
         notes.text = d['notes'] ?? '';
         pending = d['pending'] == null
@@ -258,6 +274,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       'exercises': entries.map((e) => e.draft()).toList(),
       'pending': pending,
       'live_capture_id': draftCaptureId,
+      'plan_id': planId,
+      'plan_day': planDay,
+      'readiness': readiness,
+      'completed_plan_day': completedPlanDay,
     });
     persistence = persistence.catchError((_) {}).then((_) async {
       final prefs = await SharedPreferences.getInstance();
@@ -311,6 +331,12 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
           'duration_minutes': mins,
           'notes': notes.text,
           'source': draftCaptureId != null ? 'live_confirmed' : 'manual',
+          if (planId != null && planDay != null) ...{
+            'plan_id': planId,
+            'plan_day': planDay,
+          },
+          'readiness': readiness,
+          'completed_plan_day': completedPlanDay,
           'exercises': entries.map((e) => e.confirmed()).toList(),
         };
       }
@@ -328,6 +354,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         if (mounted) setState(() => error = '训练已保存，画像页面刷新失败，请返回后刷新。');
       }
       await review();
+      await evaluateProgression();
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     } finally {
@@ -358,6 +385,108 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       if (mounted) setState(() => reviewing = false);
     }
   }
+
+  Future<void> evaluateProgression() async {
+    if (saved == null || progressing) return;
+    setState(() {
+      progressing = true;
+      progressionError = null;
+    });
+    try {
+      final result = Map<String, dynamic>.from(
+        await widget.request(
+          '/workouts/${saved!['id']}/progression',
+          'POST',
+          {},
+        ),
+      );
+      if (mounted) setState(() => progression = result);
+      await widget.onSaved();
+    } catch (e) {
+      if (mounted) setState(() => progressionError = '训练已保存，进阶评估可重试：$e');
+    } finally {
+      if (mounted) setState(() => progressing = false);
+    }
+  }
+
+  Widget planLink() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (widget.currentPlan != null)
+        DropdownButtonFormField<String>(
+          initialValue:
+              (widget.currentPlan!['days'] as List).any(
+                (d) => d['name'] == planDay,
+              )
+              ? planDay
+              : null,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: '本次对应哪个计划训练日（可选）'),
+          items: [
+            for (final d in widget.currentPlan!['days'])
+              DropdownMenuItem<String>(
+                value: d['name'],
+                child: Text('${d['name']}', overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: locked
+              ? null
+              : (value) {
+                  setState(() {
+                    planDay = value;
+                    planId = widget.currentPlan!['id'];
+                    if (entries.isEmpty) {
+                      final target = (widget.currentPlan!['days'] as List)
+                          .firstWhere((d) => d['name'] == value);
+                      for (final e in target['exercises']) {
+                        entries.add(
+                          _ExerciseDraft(
+                            e['exercise_id'],
+                            savedSets: [
+                              for (int i = 0; i < e['sets']; i++)
+                                {
+                                  'weight_kg': e['weight_kg'],
+                                  'reps': e['reps'],
+                                },
+                            ],
+                          ),
+                        );
+                      }
+                    }
+                  });
+                  changed();
+                },
+        ),
+      if (planDay != null)
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          value: completedPlanDay,
+          title: const Text('确认本次已完成所选训练日'),
+          subtitle: const Text('请把下方组次改为实际完成值；进阶还会核对实际记录，不以勾选代替达标。'),
+          onChanged: locked
+              ? null
+              : (v) {
+                  setState(() => completedPlanDay = v ?? false);
+                  changed();
+                },
+        ),
+      DropdownButtonFormField<String>(
+        initialValue: readiness,
+        decoration: const InputDecoration(labelText: '本次恢复与状态'),
+        items: const [
+          DropdownMenuItem(value: 'good', child: Text('恢复良好')),
+          DropdownMenuItem(value: 'normal', child: Text('一般')),
+          DropdownMenuItem(value: 'poor', child: Text('疲劳或恢复不足')),
+        ],
+        onChanged: locked
+            ? null
+            : (v) {
+                setState(() => readiness = v!);
+                changed();
+              },
+      ),
+    ],
+  );
 
   Widget input(String label, TextEditingController c, {bool text = false}) =>
       Padding(
@@ -406,6 +535,15 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                   const Text('训练已沉淀到用户画像，后续对话和 AI 计划会参考。'),
                   const SizedBox(height: 16),
                   WorkoutReview(record: saved!),
+                  if (progression != null) PlanChangeCard(event: progression!),
+                  if (progressing) const LinearProgressIndicator(),
+                  if (progressionError != null) Text(progressionError!),
+                  if (!progressing && progression == null)
+                    TextButton(
+                      onPressed: evaluateProgression,
+                      child: const Text('评估下一次计划'),
+                    ),
+
                   if (reviewing) const LinearProgressIndicator(),
                   if (reviewError != null) Text(reviewError!),
                   if (saved!['ai_review'] == null && !reviewing)
@@ -450,6 +588,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                             }
                           },
                   ),
+                  planLink(),
                   input('本次训练用时 / 分钟（可留空）', duration),
                   for (final e in entries)
                     Card(
