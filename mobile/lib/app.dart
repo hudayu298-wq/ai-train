@@ -10,6 +10,10 @@ import 'live/live_session.dart';
 import 'user_plan_editor.dart';
 import 'library_page.dart';
 import 'coach_chat.dart';
+import 'coach_avatar.dart';
+import 'reminders/coach_reminders.dart';
+import 'reminders/reminder_page.dart';
+import 'reminders/reminder_settings.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -48,6 +52,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Map<String, dynamic>? coachProfile;
   int chatRefreshToken = 0;
   Timer? nutritionTimer;
+  final coachReminders = CoachReminders();
   String mealType = 'breakfast';
   static const mealTypes = {
     'breakfast': '早餐',
@@ -77,6 +82,28 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    coachReminders.addListener(remindersChanged);
+    coachReminders.onOpen = openReminderDestination;
+    coachReminders.onForegroundReminder = (event) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 12),
+          content: Row(
+            children: [
+              const CoachAvatar(size: 40),
+              const SizedBox(width: 12),
+              Expanded(child: Text('${event.title}\n${event.body}')),
+            ],
+          ),
+          action: SnackBarAction(
+            label: '查看',
+            onPressed: () => openReminderDestination(event.destination),
+          ),
+        ),
+      );
+    };
+    unawaited(coachReminders.initialize());
     nutritionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!busy && catalog != null) unawaited(refreshNutrition());
     });
@@ -87,6 +114,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   void dispose() {
     nutritionTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    coachReminders.removeListener(remindersChanged);
+    coachReminders.dispose();
     for (final c in [
       age,
       height,
@@ -109,6 +138,14 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    coachReminders.foregroundActive = state == AppLifecycleState.resumed;
+    if (state == AppLifecycleState.resumed) {
+      unawaited(
+        coachReminders.resume().catchError((Object e) {
+          if (mounted) setState(() => error = '提醒状态刷新失败：$e');
+        }),
+      );
+    }
     if (state == AppLifecycleState.resumed && !busy && catalog != null) {
       unawaited(refreshNutrition());
     }
@@ -128,6 +165,28 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) setState(() => error = '当天饮食刷新失败：$e');
     }
+  }
+
+  void remindersChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void openReminderDestination(String destination) {
+    if (mounted) {
+      setState(
+        () => tab = switch (destination) {
+          'nutrition' => 3,
+          'training' => 2,
+          _ => 0,
+        },
+      );
+    }
+  }
+
+  Future<void> syncReminderSettings(ReminderSettings settings) async {
+    await request('/coach/reminders', method: 'PUT', body: settings.toJson());
+    await loadCoachProfile();
+    await refresh();
   }
 
   Future<dynamic> request(
@@ -219,6 +278,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       experience = p['experience'] ?? '';
       days = p['days'] ?? 0;
     });
+    await coachReminders.updateGoal(p['goal'] ?? '');
   }
 
   Future<void> profileFromChat() async {
@@ -427,6 +487,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Widget profilePage() => panel('我的用户画像', [
+    ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const CoachAvatar(size: 48),
+      title: Text('${coachReminders.settings.coachName} · 私教提醒'),
+      subtitle: const Text('设置训练日、训练时间和用餐提醒'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => setState(() => tab = 5),
+    ),
+    const Divider(height: 24),
     const Text('对话中明确提供的信息会自动记录在这里，也可以手动修改。'),
     if (coachProfile != null) ...[
       const SizedBox(height: 12),
@@ -768,7 +837,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     notify(result['message']);
   }
 
-  static const pageTitles = ['AI 私教', '我', '训练计划', '饮食', 'AI 陪训'];
+  static const pageTitles = ['AI 私教', '我', '训练计划', '饮食', 'AI 陪训', '私教提醒'];
 
   void navigate(int destination) {
     Navigator.of(context).pop();
@@ -817,20 +886,24 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ),
     drawer: Drawer(
       child: SafeArea(
-        child: Column(
+        child: ListView(
+          padding: EdgeInsets.zero,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 28, 24, 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.spa_outlined, color: Color(0xff244b3c), size: 32),
-                  SizedBox(height: 12),
-                  Text(
+                  const CoachAvatar(size: 72),
+                  const SizedBox(height: 12),
+                  const Text(
                     'LiftLab',
                     style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
                   ),
-                  Text('你的 AI 私教', style: TextStyle(color: Color(0xff537164))),
+                  Text(
+                    '${coachReminders.settings.coachName} · 你的 AI 私教',
+                    style: const TextStyle(color: Color(0xff537164)),
+                  ),
                 ],
               ),
             ),
@@ -840,6 +913,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               (2, Icons.fitness_center, '训练计划'),
               (4, Icons.videocam_outlined, 'AI 陪训'),
               (1, Icons.person_outline, '我'),
+              (5, Icons.notifications_outlined, '私教提醒'),
             ])
               ListTile(
                 leading: Icon(item.$2),
@@ -848,7 +922,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 selectedTileColor: const Color(0xffe3ebdf),
                 onTap: () => navigate(item.$1),
               ),
-            const Spacer(),
+            const Divider(height: 32),
             ListTile(
               leading: const Icon(Icons.description_outlined),
               title: const Text('私教提示词'),
@@ -876,34 +950,52 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             ],
           ),
         Expanded(
-          child: catalog == null
-              ? const Center(child: Text('连接服务中；连接失败时请启动后端并点击刷新。'))
-              : IndexedStack(
-                  index: tab,
-                  children: [
-                    CoachChat(
-                      request: (path, method, body) =>
-                          request(path, method: method, body: body),
-                      onProfileChanged: profileFromChat,
-                      refreshToken: chatRefreshToken,
+          child: IndexedStack(
+            index: tab,
+            children: [
+              CoachChat(
+                request: (path, method, body) =>
+                    request(path, method: method, body: body),
+                onProfileChanged: profileFromChat,
+                refreshToken: chatRefreshToken,
+                coachName: coachReminders.settings.coachName,
+              ),
+              for (final page in [
+                profilePage,
+                trainingPage,
+                nutritionPage,
+                analysisPage,
+              ])
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(18),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: catalog == null
+                          ? const Text('连接服务中；连接失败时请启动后端并点击刷新。')
+                          : page(),
                     ),
-                    for (final page in [
-                      profilePage,
-                      trainingPage,
-                      nutritionPage,
-                      analysisPage,
-                    ])
-                      SingleChildScrollView(
-                        padding: const EdgeInsets.all(18),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 760),
-                            child: page(),
-                          ),
+                  ),
+                ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(18),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: ReminderPage(
+                      service: coachReminders,
+                      sync: syncReminderSettings,
+                      readSaved: () async => ReminderSettings.fromJson(
+                        Map<String, dynamic>.from(
+                          await request('/coach/reminders'),
                         ),
                       ),
-                  ],
+                    ),
+                  ),
                 ),
+              ),
+            ],
+          ),
         ),
       ],
     ),

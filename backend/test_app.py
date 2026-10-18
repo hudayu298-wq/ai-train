@@ -108,6 +108,39 @@ def test_plan_uses_coach_preferences_and_rejects_changed_preferences(monkeypatch
     assert client.post('/api/plans', json={
         k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 409
 
+def test_reminder_preferences_update_schedule_and_keep_other_facts():
+    client.put('/api/profile', json=PROFILE)
+    defaults = client.get('/api/coach/reminders').json()
+    assert not defaults['training_enabled'] and not defaults['meals_enabled']
+    settings = {**defaults, 'coach_name': '小林', 'training_enabled': True,
+                'training_days': [2, 4], 'training_time': '20:10', 'meals_enabled': True}
+    result = client.put('/api/coach/reminders', json=settings)
+    assert result.status_code == 200
+    facts = result.json()['profile']['facts']
+    assert facts['age'] == PROFILE['age'] and facts['days'] == 2
+    assert facts['schedule'] == '周二、周四 20:10训练（北京时间）'
+    assert client.get('/api/profile').json()['days'] == 2
+    assert client.get('/api/coach/reminders').json()['coach_name'] == '小林'
+    context = module.coach_context('提醒我训练')
+    assert context['coach_persona']['coach_name'] == '小林'
+    assert context['reminder_settings']['training_time'] == '20:10'
+    client.put('/api/coach/reminders', json={**settings, 'training_enabled': False})
+    assert client.get('/api/profile').json()['days'] == 2
+
+@pytest.mark.parametrize('invalid', [
+    {'training_enabled': True, 'training_days': []},
+    {'training_days': [1, 1]}, {'training_days': [8]},
+    {'training_time': '24:00'}, {'lead_minutes': -1},
+    {'meals_enabled': True, 'meal_times': {}}, {'meal_times': {'lunch': '12:70'}},
+    {'timezone': 'unsupported'},
+])
+def test_invalid_reminder_settings_do_not_change_profile(invalid):
+    client.put('/api/profile', json=PROFILE)
+    initial = client.get('/api/profile').json()
+    assert client.put('/api/coach/reminders', json=invalid).status_code == 422
+    assert client.get('/api/profile').json() == initial
+    assert not client.get('/api/coach/reminders').json()['training_enabled']
+
 def test_coach_provider_sends_prompt_context_and_explicit_errors(monkeypatch):
     import httpx
     config = {'AI_API_KEY': 'test-secret', 'AI_BASE_URL': 'https://model.example/v1', 'AI_MODEL': 'test-model'}

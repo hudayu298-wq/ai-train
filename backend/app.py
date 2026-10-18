@@ -14,12 +14,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner, library, movement_analysis, coach
+    from . import ai_planner, library, movement_analysis, coach, reminders
 except ImportError:
     import ai_planner
     import library
     import movement_analysis
     import coach
+    import reminders
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -382,7 +383,11 @@ def coach_context(message):
     exercises = exercise_entries()
     related = [e for e in exercises if any(term and term in message for term in
                [e['name'], *e.get('aliases', [])])]
+    with connection() as db:
+        reminder_settings = reminders.preferences(db)
     return {
+        'coach_persona': {'coach_name': reminder_settings['coach_name'], 'virtual_character': True},
+        'reminder_settings': reminder_settings,
         'today': nutrition_today().isoformat(),
         'nutrition': nutrition_summary(), 'rm': get_rm(),
         'current_plan': get_plans()[:1], 'recent_training': get_training()[:5],
@@ -396,6 +401,7 @@ def coach_context(message):
     }
 
 app.include_router(coach.router(connection, Profile, coach_context))
+app.include_router(reminders.router(connection, Profile))
 
 @app.post('/api/media')
 async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: str = Form(''), file: UploadFile = File(...)):
