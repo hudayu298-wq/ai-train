@@ -1,0 +1,11 @@
+.venv/
+.tools/
+__pycache__/
+.pytest_cache/
+/data/
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins-dependencies
+.env
+.env.*
+!.env.example
