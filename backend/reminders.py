@@ -6,9 +6,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 try:
-    from . import coach
+    from . import coach, coaches
 except ImportError:
     import coach
+    import coaches
 
 Clock = Annotated[str, Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')]
 Weekday = Annotated[int, Field(ge=1, le=7, strict=True)]
@@ -16,7 +17,8 @@ Weekday = Annotated[int, Field(ge=1, le=7, strict=True)]
 
 class ReminderSettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    coach_name: str = Field(default='林教练', min_length=1, max_length=16, pattern=r'.*\S.*')
+    coach_id: coaches.CoachId = 'steady'
+    coach_name: str = Field(default='阿衡', min_length=1, max_length=16, pattern=r'.*\S.*')
     timezone: Literal['Asia/Shanghai'] = 'Asia/Shanghai'
     training_enabled: bool = False
     training_days: list[Weekday] = Field(default_factory=lambda: [1, 3, 5], max_length=7)
@@ -39,7 +41,10 @@ class ReminderSettings(BaseModel):
 
 def preferences(db):
     stored = coach.read(db, 'coach_reminders', 'local-coach-reminders')
-    return stored or ReminderSettings().model_dump()
+    if not stored:
+        return ReminderSettings().model_dump()
+    return {**ReminderSettings().model_dump(), **stored,
+            'coach_name': '阿衡' if stored.get('coach_name') == '林教练' else stored.get('coach_name', '阿衡')}
 
 
 def router(connection, profile_model):

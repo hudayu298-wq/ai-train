@@ -10,12 +10,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 try:
-    from . import ai_planner
+    from . import ai_planner, coaches
 except ImportError:
     import ai_planner
+    import coaches
 
 PROMPT = (Path(__file__).parent / 'prompts' / 'fitness_coach.md').read_text(encoding='utf-8')
-PROMPT_VERSION = 'coach-1.1'
+PROMPT_VERSION = 'coach-2.0'
 LABELS = {
     'age': '年龄', 'height_cm': '身高 / cm', 'weight_kg': '体重 / kg',
     'sex': '代谢估算性别', 'goal': '训练目标', 'experience': '训练经验',
@@ -47,6 +48,8 @@ class MessageRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     request_id: str = Field(min_length=8, max_length=80, pattern=r'^[a-zA-Z0-9_-]+$')
     message: str = Field(min_length=1, max_length=4000)
+    coach_id: coaches.CoachId | None = None
+    coach_name: str | None = Field(default=None, min_length=1, max_length=16, pattern=r'.*\S.*')
 
 
 class ProfileUpdate(BaseModel):
@@ -88,7 +91,8 @@ def turns(db, limit=40):
 
 
 def fingerprint(db):
-    data = {'state': state(db), 'turns': turns(db)}
+    data = {'state': state(db), 'turns': turns(db),
+            'persona_settings': read(db, 'coach_reminders', 'local-coach-reminders')}
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -133,7 +137,7 @@ async def respond(message, history, profile, context):
     schema = CoachOutput.model_json_schema()
     schema['$defs']['ProfileUpdate']['properties']['field']['enum'] = list(LABELS)
     messages = [
-        {'role': 'system', 'content': PROMPT},
+        {'role': 'system', 'content': coaches.prompt(context['coach_persona'].get('id', 'steady'), PROMPT)},
         {'role': 'system', 'content': json.dumps({
             'known_profile': profile, 'fitness_context': context,
             'profile_field_schema': ProfilePatch.model_json_schema(),
@@ -142,7 +146,8 @@ async def respond(message, history, profile, context):
     ]
     for turn in history[-12:]:
         messages.extend([{'role': 'user', 'content': turn['user_message']},
-                         {'role': 'assistant', 'content': turn['reply']}])
+                         {'role': 'assistant', 'content':
+                          f"[历史教练：{turn.get('coach_name', '先前教练')}]\n{turn['reply']}"}])
     messages.append({'role': 'user', 'content': message})
     return await ai_planner.chat_json(messages, max_tokens=2600)
 
@@ -155,8 +160,17 @@ def router(connection, profile_model, context_provider):
         return {**ai_planner.status(), 'prompt_version': PROMPT_VERSION}
 
     @api.get('/prompt')
-    def prompt():
-        return {'prompt': PROMPT, 'version': PROMPT_VERSION}
+    def prompt(coach_id: coaches.CoachId | None = None):
+        with connection() as db:
+            saved = read(db, 'coach_reminders', 'local-coach-reminders') or {}
+        selected = coach_id or saved.get('coach_id', 'steady')
+        return {'prompt': coaches.prompt(selected, PROMPT), 'version': PROMPT_VERSION,
+                'coach': coaches.require(selected), 'common_prompt': PROMPT,
+                'personality_prompt': coaches.PERSONALITY_PROMPTS[selected]}
+
+    @api.get('/personas')
+    def personas():
+        return {'items': coaches.PERSONAS, 'version': PROMPT_VERSION}
 
     @api.get('/profile')
     def profile():
@@ -181,13 +195,20 @@ def router(connection, profile_model, context_provider):
         with connection() as db:
             cached = read(db, 'coach_turn', key)
             if cached:
-                if cached['user_message'] != request.message:
+                if cached['user_message'] != request.message or (
+                    request.coach_id and cached.get('coach_id', 'steady') != request.coach_id):
                     raise HTTPException(409, '请求编号已用于其他消息')
                 return {**cached, 'profile': state(db)}
             profile = state(db)
             history = turns(db)
             revision = fingerprint(db)
-        raw, model = await respond(request.message, history, profile['facts'], context_provider(request.message))
+        context = context_provider(request.message)
+        coach_id = request.coach_id or context.get('coach_persona', {}).get('id', 'steady')
+        persona = coaches.require(coach_id)
+        existing = context.get('coach_persona', {})
+        coach_name = request.coach_name or (existing.get('coach_name') if existing.get('id') == coach_id else None) or persona['name']
+        context['coach_persona'] = {**persona, 'coach_name': coach_name, 'virtual_character': True}
+        raw, model = await respond(request.message, history, profile['facts'], context)
         try:
             output = CoachOutput.model_validate(raw)
             changes, evidence = validate_updates(output, request.message)
@@ -197,7 +218,8 @@ def router(connection, profile_model, context_provider):
             db.execute('BEGIN IMMEDIATE')
             cached = read(db, 'coach_turn', key)
             if cached:
-                if cached['user_message'] != request.message:
+                if cached['user_message'] != request.message or (
+                    request.coach_id and cached.get('coach_id', 'steady') != request.coach_id):
                     raise HTTPException(409, '请求编号已用于其他消息')
                 return {**cached, 'profile': state(db)}
             if fingerprint(db) != revision:
@@ -206,6 +228,7 @@ def router(connection, profile_model, context_provider):
                 apply_profile(db, changes, profile_model, key)
             result = {'request_id': request.request_id, 'user_message': request.message,
                       'reply': output.reply, 'profile_changes': evidence, 'model': model,
+                      'coach_id': coach_id, 'coach_name': coach_name,
                       'prompt_version': PROMPT_VERSION, 'created_at': datetime.now(timezone.utc).isoformat()}
             write(db, 'coach_turn', key, result)
             return {**result, 'profile': state(db)}
