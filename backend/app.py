@@ -4,7 +4,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -73,7 +73,17 @@ class Profile(BaseModel):
 class Meal(BaseModel):
     food_id: str
     grams: float = Field(gt=0, le=3000)
-    day: date = Field(default_factory=date.today)
+    meal_type: Literal['breakfast', 'lunch', 'dinner', 'snack'] = 'breakfast'
+    day: date | None = None
+
+def nutrition_today():
+    return datetime.now(timezone(timedelta(hours=8))).date()
+
+NUTRIENTS = ['kcal', 'protein', 'fat', 'carbs']
+MEAL_LABELS = {'breakfast': '早餐', 'lunch': '午餐', 'dinner': '晚餐', 'snack': '加餐', 'unassigned': '未分类'}
+
+def nutrient_totals(items):
+    return {k: float(sum((Decimal(str(item['nutrients'][k])) for item in items), Decimal(0)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) for k in NUTRIENTS}
 
 class Training(BaseModel):
     exercise_id: str
@@ -130,20 +140,62 @@ def get_plans():
 
 @app.post('/api/meals')
 def add_meal(meal: Meal):
+    today = nutrition_today()
+    if meal.day is not None and meal.day != today:
+        raise HTTPException(422, '饮食仅支持记录当天，请刷新页面后重试')
     food = next((f for f in FOODS if f['id'] == meal.food_id), None)
     if not food:
         raise HTTPException(422, '食物不存在')
-    return save('meal', {**meal.model_dump(mode='json'), 'name': food['name'],
+    return save('meal', {**meal.model_dump(mode='json'), 'day': today.isoformat(), 'name': food['name'],
         'nutrients': {k: float((Decimal(str(food[k])) * Decimal(str(meal.grams)) / 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) for k in ['kcal', 'protein', 'fat', 'carbs']},
         'source': 'starter-example-v1'})
 
 @app.get('/api/meals')
 def get_meals():
-    return records('meal')
+    today = nutrition_today().isoformat()
+    return [item for item in records('meal') if item['day'] == today]
+
+@app.get('/api/nutrition/today')
+def nutrition_summary():
+    today = nutrition_today().isoformat()
+    items = [item for item in records('meal') if item['day'] == today]
+    totals = nutrient_totals(items)
+    groups = []
+    for kind, label in MEAL_LABELS.items():
+        entries = [item for item in items if item.get('meal_type', 'unassigned') == kind]
+        if kind == 'unassigned' and not entries:
+            continue
+        groups.append({'meal_type': kind, 'label': label, 'items': entries, 'totals': nutrient_totals(entries)})
+    plans = records('plan')
+    profile = get_profile()
+    current = plans[0] if plans else None
+    target_status = 'missing'
+    target = None
+    if current and profile:
+        if current['profile_snapshot'] == profile:
+            target = current['nutrition']
+            target_status = 'ready'
+        else:
+            target_status = 'stale'
+    comparisons = {}
+    for key in NUTRIENTS:
+        goal = target[key] if target else None
+        delta = round(totals[key] - goal, 1) if goal is not None else None
+        comparisons[key] = {'consumed': totals[key], 'target': goal,
+            'remaining': max(0, -delta) if delta is not None else None,
+            'excess': max(0, delta) if delta is not None else None,
+            'percent': round(totals[key] / goal * 100, 1) if goal and goal > 0 else None}
+    return {'day': today, 'timezone': 'Asia/Shanghai', 'records': items, 'groups': groups,
+            'totals': totals, 'target': target, 'target_status': target_status, 'comparison': comparisons}
 
 @app.delete('/api/meals/{record_id}')
 def delete_meal(record_id: str):
     with connection() as db:
+        existing = db.execute('SELECT payload FROM records WHERE id=? AND kind=?', (record_id, 'meal')).fetchone()
+        if not existing:
+            raise HTTPException(404, '记录不存在')
+        if json.loads(existing['payload'])['day'] != nutrition_today().isoformat():
+            raise HTTPException(422, '该记录不属于当天，请刷新当天饮食')
         result = db.execute('DELETE FROM records WHERE id=? AND kind=?', (record_id, 'meal'))
     if not result.rowcount:
         raise HTTPException(404, '记录不存在')

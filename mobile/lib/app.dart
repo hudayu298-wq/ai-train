@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -33,12 +34,21 @@ class Home extends StatefulWidget {
   State<Home> createState() => _HomeState();
 }
 
-class _HomeState extends State<Home> {
+class _HomeState extends State<Home> with WidgetsBindingObserver {
   int tab = 0;
   bool busy = false;
   String? error;
   Map<String, dynamic>? catalog;
   List<dynamic> plans = [], training = [], meals = [], media = [];
+  Map<String, dynamic>? nutrition;
+  Timer? nutritionTimer;
+  String mealType = 'breakfast';
+  static const mealTypes = {
+    'breakfast': '早餐',
+    'lunch': '午餐',
+    'dinner': '晚餐',
+    'snack': '加餐',
+  };
   final age = TextEditingController(text: '28');
   final height = TextEditingController(text: '175');
   final weight = TextEditingController(text: '70');
@@ -56,11 +66,17 @@ class _HomeState extends State<Home> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    nutritionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!busy && catalog != null) unawaited(refreshNutrition());
+    });
     initialize();
   }
 
   @override
   void dispose() {
+    nutritionTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     for (final c in [
       age,
       height,
@@ -75,6 +91,29 @@ class _HomeState extends State<Home> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !busy && catalog != null) {
+      unawaited(refreshNutrition());
+    }
+  }
+
+  Future<void> refreshNutrition() async {
+    try {
+      final result = Map<String, dynamic>.from(
+        await request('/nutrition/today'),
+      );
+      if (mounted) {
+        setState(() {
+          nutrition = result;
+          meals = result['records'];
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = '当天饮食刷新失败：$e');
+    }
   }
 
   Future<dynamic> request(
@@ -133,14 +172,15 @@ class _HomeState extends State<Home> {
     final result = await Future.wait([
       request('/plans'),
       request('/training'),
-      request('/meals'),
+      request('/nutrition/today'),
       request('/media'),
     ]);
     if (!mounted) return;
     setState(() {
       plans = result[0];
       training = result[1];
-      meals = result[2];
+      nutrition = Map<String, dynamic>.from(result[2]);
+      meals = nutrition!['records'];
       media = result[3];
     });
   }
@@ -257,7 +297,7 @@ class _HomeState extends State<Home> {
         ),
       ),
       panel('你的训练路线', [
-        Text('训练记录 ${training.length} 条 · 饮食记录 ${meals.length} 条'),
+        Text('训练记录 ${training.length} 条 · 当天饮食 ${meals.length} 条'),
         const SizedBox(height: 12),
         const Text('负重训练已开放；自重训练将在后续版本加入。'),
         const SizedBox(height: 12),
@@ -392,8 +432,25 @@ class _HomeState extends State<Home> {
   );
   Widget nutritionPage() => Column(
     children: [
-      panel('记录这一餐', [
+      panel('当天营养 · ${nutrition?['day'] ?? ''}', [
+        const Text('按北京时间计算当天摄入，目标来自当前计划。'),
+        if (nutrition?['target_status'] != 'ready')
+          Text(
+            nutrition?['target_status'] == 'stale'
+                ? '画像已修改，请重新生成计划以更新营养目标。'
+                : '先保存画像并生成计划，才能对比每日目标。',
+          ),
+        for (final entry in {
+          'kcal': '热量',
+          'protein': '蛋白质',
+          'fat': '脂肪',
+          'carbs': '碳水',
+        }.entries)
+          nutrientProgress(entry.key, entry.value),
+      ]),
+      panel('记录当天这一餐', [
         const Text('当前食物库是开发示例数据，每100克计，尚未经专业审核。'),
+        select('餐次', mealType, mealTypes, (v) => mealType = v),
         select('食物', food, {
           for (final f in catalog?['foods'] ?? []) '${f['id']}': '${f['name']}',
         }, (v) => food = v),
@@ -402,7 +459,11 @@ class _HomeState extends State<Home> {
           await request(
             '/meals',
             method: 'POST',
-            body: {'food_id': food, 'grams': number(grams)},
+            body: {
+              'food_id': food,
+              'grams': number(grams),
+              'meal_type': mealType,
+            },
           );
           await refresh();
           notify('饮食已记录');
@@ -410,35 +471,66 @@ class _HomeState extends State<Home> {
         action('上传餐食照片', () => upload('meal')),
         const Text('照片仅保存，识别尚未接入。支持 JPG/PNG，最大10MB。'),
       ]),
-      panel(
-        '饮食记录',
-        meals.isEmpty
-            ? [const Text('还没有饮食记录')]
-            : [
-                for (final m in meals)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${m['name']} · ${m['grams']} g'),
-                    subtitle: Text(
-                      '${m['day']} · ${m['nutrients']['kcal']} kcal · 蛋白质 ${m['nutrients']['protein']} g',
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: busy
-                          ? null
-                          : () => perform(() async {
-                              await request(
-                                '/meals/${m['id']}',
-                                method: 'DELETE',
-                              );
-                              await refresh();
-                            }),
-                    ),
-                  ),
-              ],
-      ),
+      for (final group in nutrition?['groups'] ?? [])
+        panel('${group['label']} · ${group['totals']['kcal']} kcal', [
+          Text(
+            '蛋白质 ${group['totals']['protein']} g · 脂肪 ${group['totals']['fat']} g · 碳水 ${group['totals']['carbs']} g',
+          ),
+          if ((group['items'] as List).isEmpty) const Text('这餐还没有记录'),
+          for (final m in group['items'])
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('${m['name']} · ${m['grams']} g'),
+              subtitle: Text(
+                '${m['nutrients']['kcal']} kcal · 蛋白质 ${m['nutrients']['protein']} g · 脂肪 ${m['nutrients']['fat']} g · 碳水 ${m['nutrients']['carbs']} g',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: busy
+                    ? null
+                    : () => perform(() async {
+                        await request('/meals/${m['id']}', method: 'DELETE');
+                        await refresh();
+                      }),
+              ),
+            ),
+        ]),
     ],
   );
+  Widget nutrientProgress(String key, String label) {
+    final metric = nutrition?['comparison'][key];
+    if (metric == null) return const SizedBox.shrink();
+    final unit = key == 'kcal' ? 'kcal' : 'g';
+    final target = metric['target'];
+    final excess = (metric['excess'] as num?)?.toDouble() ?? 0;
+    final ratio = ((metric['percent'] as num?)?.toDouble() ?? 0) / 100;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label：已摄入 ${metric['consumed']} $unit / ${target == null ? '目标未设置' : '目标 $target $unit'}',
+          ),
+          const SizedBox(height: 6),
+          if (target != null) ...[
+            LinearProgressIndicator(
+              value: ratio.clamp(0.0, 1.0),
+              minHeight: 8,
+              color: excess > 0 ? Colors.orange.shade700 : null,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              excess > 0
+                  ? '超出目标 $excess $unit'
+                  : '距目标还差 ${metric['remaining']} $unit',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget analysisPage() => Column(
     children: [
       panel('实时动作训练', [
