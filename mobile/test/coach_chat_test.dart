@@ -129,6 +129,14 @@ void main() {
           await tester.tap(find.widgetWithText(ListTile, item));
           await tester.pumpAndSettle();
           expect(find.widgetWithText(AppBar, item), findsOneWidget);
+          expect(
+            find.byTooltip('食物库'),
+            item == '饮食' ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.byTooltip('动作库'),
+            item == '训练计划' || item == 'AI 陪训' ? findsOneWidget : findsNothing,
+          );
           expect(tester.takeException(), isNull);
         }
         await tester.tap(find.byTooltip('切换桌宠教练'));
