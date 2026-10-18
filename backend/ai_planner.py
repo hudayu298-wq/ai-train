@@ -32,7 +32,7 @@ async def generate(profile, baselines, schema):
         raise HTTPException(503, 'AI_BASE_URL必须使用HTTPS')
     instruction = '''你是中文训练计划助手。只输出符合给定Schema的JSON，不输出Markdown。
 根据用户的年龄、体重、目标、经验、每周训练天数制定一周训练草稿。
-只允许bench（平板杠铃卧推）、squat（高杠杠铃深蹲）、deadlift（传统杠铃硬拉）。
+只允许Schema的x-exercise-catalog提供的动作ID；根据部位与器械安排训练，不要混淆高杠/低杠、传统/罗马尼亚硬拉等变式。每个训练日最多6个不同动作。
 训练日数量必须等于画像days；名称必须唯一，标明训练日及恢复安排。
 缺少动作对应的有效RM时weight_kg必须为null，不得从体重、年龄或性别猜测负重。
 有有效RM时重量不得超过参考1RM或该组次数的RM上限，并预留余力；不可安排极限测试。

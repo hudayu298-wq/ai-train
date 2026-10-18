@@ -14,9 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner
+    from . import ai_planner, library
 except ImportError:
     import ai_planner
+    import library
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -51,18 +52,25 @@ app = FastAPI(title='LiftLab API', version='0.1.0')
 app.add_middleware(CORSMiddleware, allow_origin_regex=r'https?://(localhost|127\.0\.0\.1)(:\d+)?',
                    allow_methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
 
-EXERCISES = [
-    {'id': 'bench', 'name': '平板杠铃卧推', 'type': 'weighted', 'view': '固定侧面，完整覆盖杠铃和上身；录像时保持保护措施。'},
-    {'id': 'squat', 'name': '高杠杠铃深蹲', 'type': 'weighted', 'view': '固定侧面，完整覆盖全身和杠铃，避免器械遮挡。'},
-    {'id': 'deadlift', 'name': '传统杠铃硬拉', 'type': 'weighted', 'view': '固定侧面，覆盖全身、杠铃和地面，穿便于观察的衣服。'},
-]
-# Curated starter examples, per 100 g; not a comprehensive licensed food database.
-FOODS = [
-    {'id': 'rice', 'name': '熟米饭', 'kcal': 116, 'protein': 2.6, 'carbs': 25.9, 'fat': 0.3},
-    {'id': 'chicken', 'name': '熟鸡胸肉（无皮，示例）', 'kcal': 165, 'protein': 31, 'carbs': 0, 'fat': 3.6},
-    {'id': 'egg', 'name': '水煮鸡蛋（可食部分）', 'kcal': 155, 'protein': 12.6, 'carbs': 1.1, 'fat': 10.6},
-    {'id': 'broccoli', 'name': '熟西兰花（示例）', 'kcal': 35, 'protein': 2.4, 'carbs': 7.2, 'fat': 0.4},
-]
+library.initialize(connection)
+app.include_router(library.router(connection))
+
+def exercise_entries():
+    return library.all_entries(connection, 'exercises')
+
+def food_entries():
+    return library.all_entries(connection, 'foods')
+
+def require_weighted(exercise_id):
+    entry = library.find_entry(connection, 'exercises', exercise_id)
+    if not entry or entry['type'] != 'weighted':
+        raise HTTPException(422, '请选择动作库中有效的负重动作；自重模块当前仅支持资料浏览')
+    return entry
+
+def validate_plan_exercises(plan):
+    for day in plan['days']:
+        for exercise in day['exercises']:
+            require_weighted(exercise['exercise_id'])
 
 class Profile(BaseModel):
     age: int = Field(ge=18, le=90)
@@ -99,14 +107,14 @@ class Training(BaseModel):
     day: date = Field(default_factory=date.today)
 
 class RMRecord(BaseModel):
-    exercise_id: Literal['bench', 'squat', 'deadlift']
+    exercise_id: str = Field(min_length=1, max_length=80)
     weight_kg: float = Field(gt=0, le=500)
     reps: int = Field(ge=1, le=10)
     measured_on: date
     confirmed_maximum: bool
 
 class PlanExercise(BaseModel):
-    exercise_id: Literal['bench', 'squat', 'deadlift']
+    exercise_id: str = Field(min_length=1, max_length=80)
     weight_kg: float | None = Field(gt=0, le=500)
     sets: int = Field(ge=1, le=20)
     reps: int = Field(ge=1, le=100)
@@ -135,6 +143,7 @@ RM_FRACTIONS = {1: 1.0, 2: .95, 3: .93, 4: .90, 5: .87, 6: .85, 7: .83, 8: .80, 
 
 @app.post('/api/rm')
 def add_rm(rm: RMRecord):
+    require_weighted(rm.exercise_id)
     if rm.measured_on > nutrition_today():
         raise HTTPException(422, 'RM日期不能晚于今天')
     estimate = rm.weight_kg / RM_FRACTIONS[rm.reps] if rm.confirmed_maximum else None
@@ -190,8 +199,12 @@ def health():
     return {'status': 'ok', 'mode': 'local_single_user', 'vision_enabled': False}
 
 @app.get('/api/catalog')
-def catalog():
-    return {'exercises': EXERCISES, 'foods': FOODS, 'food_source': 'MVP 示例数据，每100克；仅用于验证记录流程'}
+def catalog(extended: bool = False):
+    # Older installed clients assume every returned exercise has a live detector.
+    exercises = exercise_entries()
+    if not extended:
+        exercises = [e for e in exercises if e.get('realtime_supported')]
+    return {'exercises': exercises, 'foods': food_entries(), 'food_source': '每100克可食部分；来源与生熟状态详见每个条目'}
 
 @app.get('/api/profile')
 def get_profile():
@@ -213,7 +226,8 @@ def save_user_plan(plan: UserPlan):
             raise HTTPException(422, 'AI草稿不存在，请重新生成')
         if draft['profile_snapshot'] != get_profile() or draft['rm_snapshot'] != get_rm():
             raise HTTPException(409, '画像或RM已变化，请重新生成AI计划')
-    names = {e['id']: e['name'] for e in EXERCISES}
+    validate_plan_exercises(payload)
+    names = {e['id']: e['name'] for e in exercise_entries()}
     for day in payload['days']:
         for exercise in day['exercises']:
             exercise['name'] = names[exercise['exercise_id']]
@@ -225,6 +239,7 @@ def save_user_plan(plan: UserPlan):
 
 @app.post('/api/plans/assess')
 def assess_draft(plan: UserPlan):
+    validate_plan_exercises(plan.model_dump())
     return assess_plan(plan.model_dump())
 
 @app.get('/api/ai/status')
@@ -237,19 +252,27 @@ async def generate_plan():
     if not profile:
         raise HTTPException(422, '请先保存用户画像，再生成AI计划')
     if profile['restrictions'].strip():
-        raise HTTPException(422, '画像包含伤病或训练限制。当前仅支持三项负重动作，请先确认适合的训练范围后再生成计划。')
+        raise HTTPException(422, '画像包含伤病或训练限制。请先确认适合的训练范围后再生成计划。')
     rm_snapshot = get_rm()
     baselines = {r['exercise_id']: r for r in rm_snapshot if r['confirmed_maximum']
         and r['reference_1rm_kg'] and (nutrition_today() - date.fromisoformat(r['measured_on'])).days <= 90}
-    raw, model = await ai_planner.generate(profile, baselines, AIPlan.model_json_schema())
+    available = [e for e in exercise_entries() if e['type'] == 'weighted']
+    if not available:
+        raise HTTPException(422, '动作库没有可用的负重动作')
+    schema = AIPlan.model_json_schema()
+    schema['$defs']['PlanExercise']['properties']['exercise_id']['enum'] = [e['id'] for e in available]
+    schema['x-exercise-catalog'] = [{k: e[k] for k in ('id', 'name', 'category', 'equipment', 'weight_basis')} for e in available]
+    raw, model = await ai_planner.generate(profile, baselines, schema)
     try:
         generated = AIPlan.model_validate(raw).model_dump()
         if len(generated['days']) != profile['days'] or len({d['name'] for d in generated['days']}) != profile['days']:
             raise ValueError('训练日与画像不匹配')
         for day in generated['days']:
-            if len(day['exercises']) > 3 or len({e['exercise_id'] for e in day['exercises']}) != len(day['exercises']):
+            if len(day['exercises']) > 6 or len({e['exercise_id'] for e in day['exercises']}) != len(day['exercises']):
                 raise ValueError('动作重复或过多')
             for e in day['exercises']:
+                if e['exercise_id'] not in {x['id'] for x in available}:
+                    raise ValueError('动作不在可用库中')
                 rm = baselines.get(e['exercise_id'])
                 if not rm:
                     e['weight_kg'] = None
@@ -281,12 +304,12 @@ def add_meal(meal: Meal):
     today = nutrition_today()
     if meal.day is not None and meal.day != today:
         raise HTTPException(422, '饮食仅支持记录当天，请刷新页面后重试')
-    food = next((f for f in FOODS if f['id'] == meal.food_id), None)
+    food = library.find_entry(connection, 'foods', meal.food_id)
     if not food:
         raise HTTPException(422, '食物不存在')
-    return save('meal', {**meal.model_dump(mode='json'), 'day': today.isoformat(), 'name': food['name'],
+    return save('meal', {**meal.model_dump(mode='json'), 'day': today.isoformat(), 'name': food['name'], 'food_state': food['state'], 'food_source': food['source_label'],
         'nutrients': {k: float((Decimal(str(food[k])) * Decimal(str(meal.grams)) / 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) for k in ['kcal', 'protein', 'fat', 'carbs']},
-        'source': 'starter-example-v1'})
+        'source': food.get('source_kind', 'user')})
 
 @app.get('/api/meals')
 def get_meals():
@@ -336,9 +359,8 @@ def delete_meal(record_id: str):
 
 @app.post('/api/training')
 def add_training(training: Training):
-    if training.exercise_id not in [e['id'] for e in EXERCISES]:
-        raise HTTPException(422, '动作不存在')
-    return save('training', {**training.model_dump(mode='json'),
+    selected = require_weighted(training.exercise_id)
+    return save('training', {**training.model_dump(mode='json'), 'name': selected['name'], 'weight_basis': selected['weight_basis'],
         'feedback': '记录到不适，请停止自动加重并寻求专业评估。' if training.pain else '已记录；当前版本不会自动增加重量。'})
 
 @app.get('/api/training')
@@ -347,8 +369,8 @@ def get_training():
 
 @app.post('/api/media')
 async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: str = Form(''), file: UploadFile = File(...)):
-    if kind == 'video' and exercise_id not in [e['id'] for e in EXERCISES]:
-        raise HTTPException(422, '请选择支持的动作')
+    if kind == 'video':
+        require_weighted(exercise_id)
     allowed = {'meal': {'image/jpeg': '.jpg', 'image/png': '.png'},
                'video': {'video/mp4': '.mp4', 'video/quicktime': '.mov'}}
     suffix = allowed[kind].get(file.content_type)

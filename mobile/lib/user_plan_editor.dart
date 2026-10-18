@@ -104,7 +104,8 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: DropdownButtonFormField<String>(
           key: ValueKey('$label-$value'),
-          initialValue: value,
+          initialValue: widget.exercises.containsKey(value) ? value : null,
+          isExpanded: true,
           decoration: InputDecoration(
             labelText: label,
             border: const OutlineInputBorder(),

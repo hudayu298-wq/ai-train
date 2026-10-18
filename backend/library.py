@@ -1,0 +1,180 @@
+"""Persistent food/exercise catalog, including custom entries and atomic JSON import."""
+import json
+from pathlib import Path
+from typing import Literal
+from uuid import uuid4
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+class FoodEntry(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    id: str | None = Field(default=None, pattern=r'^[a-z0-9_]+$', max_length=80)
+    name: str = Field(min_length=1, max_length=100, pattern=r'.*\S.*')
+    category: str = Field(min_length=1, max_length=40)
+    state: Literal['raw', 'cooked', 'prepared'] = 'prepared'
+    aliases: list[str] = Field(default_factory=list, max_length=15)
+    kcal: float = Field(ge=0, le=900)
+    protein: float = Field(ge=0, le=100)
+    fat: float = Field(ge=0, le=100)
+    carbs: float = Field(ge=0, le=100)
+    source_label: str = Field(min_length=1, max_length=500)
+    notes: str = Field(default='', max_length=1500)
+
+    @model_validator(mode='after')
+    def mass(self):
+        if self.protein + self.fat + self.carbs > 105:
+            raise ValueError('每100克的三大营养素总量异常，请核对单位')
+        return self
+
+class ExerciseEntry(BaseModel):
+    id: str | None = Field(default=None, pattern=r'^[a-z0-9_]+$', max_length=80)
+    name: str = Field(min_length=1, max_length=100, pattern=r'.*\S.*')
+    category: str = Field(min_length=1, max_length=40)
+    type: Literal['weighted', 'bodyweight'] = 'weighted'
+    equipment: str = Field(min_length=1, max_length=80)
+    difficulty: Literal['beginner', 'intermediate', 'advanced'] = 'beginner'
+    aliases: list[str] = Field(default_factory=list, max_length=15)
+    summary: str = Field(default='', max_length=1500)
+    weight_basis: str = Field(default='含器械总重量；同一器械和变式单独记录', max_length=300)
+    view: str = Field(default='尚未支持实时检测，可记录训练。', max_length=500)
+    source_label: str = Field(default='用户维护的动作条目，未审核', max_length=500)
+
+KINDS = {'foods': FoodEntry, 'exercises': ExerciseEntry}
+
+def initialize(connection):
+    with connection() as db:
+        db.execute('''CREATE TABLE IF NOT EXISTS catalog_items (
+            kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+            category TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+            payload TEXT NOT NULL, PRIMARY KEY(kind,id))''')
+        db.execute('CREATE INDEX IF NOT EXISTS catalog_kind_category ON catalog_items(kind,category,active)')
+        for kind in KINDS:
+            entries = json.loads((Path(__file__).parent / 'data' / f'{kind}.json').read_text(encoding='utf-8'))
+            for entry in entries:
+                KINDS[kind].model_validate(entry)
+                db.execute('INSERT OR IGNORE INTO catalog_items VALUES (?,?,?,?,1,?)',
+                    (kind, entry['id'], entry['name'], entry['category'], json.dumps(entry, ensure_ascii=False)))
+
+def all_entries(connection, kind):
+    with connection() as db:
+        return [json.loads(r['payload']) for r in db.execute(
+            'SELECT payload FROM catalog_items WHERE kind=? AND active=1 ORDER BY rowid', (kind,))]
+
+def find_entry(connection, kind, entry_id):
+    with connection() as db:
+        row = db.execute('SELECT payload FROM catalog_items WHERE kind=? AND id=? AND active=1', (kind, entry_id)).fetchone()
+    return json.loads(row['payload']) if row else None
+
+def custom_payload(kind, entry, entry_id=None):
+    payload = entry.model_dump(exclude={'id'})
+    payload.update(id=entry_id or entry.id or f'{kind}_{uuid4().hex}', source_kind='user',
+        review_status='user_supplied')
+    if kind == 'foods':
+        payload.update(basis_g=100)
+    else:
+        payload.update(realtime_supported=False, rm_supported=entry.type == 'weighted')
+    return payload
+
+def router(connection):
+    routes = APIRouter(prefix='/api/library', tags=['library'])
+
+    @routes.get('/{kind}')
+    def search(kind: Literal['foods', 'exercises'], q: str = Query(default='', max_length=100),
+               category: str = '', type: str = '', limit: int = Query(default=50, ge=1, le=200),
+               offset: int = Query(default=0, ge=0)):
+        entries = all_entries(connection, kind)
+        categories = sorted({e['category'] for e in entries})
+        term = q.strip().casefold()
+        result = [e for e in entries if (not category or e['category'] == category)
+                  and (not type or e.get('type') == type)
+                  and (not term or term in json.dumps([e['name'], e.get('aliases', []),
+                       e.get('original_name', ''), e.get('equipment', '')], ensure_ascii=False).casefold())]
+        return {'items': result[offset:offset + limit], 'total': len(result),
+                'limit': limit, 'offset': offset, 'categories': categories}
+
+    @routes.get('/{kind}/export')
+    def export(kind: Literal['foods', 'exercises']):
+        return {'schema_version': 1, 'kind': kind, 'items': all_entries(connection, kind)}
+
+    @routes.post('/{kind}/import')
+    def import_items(kind: Literal['foods', 'exercises'], items: list[dict]):
+        if not 1 <= len(items) <= 500:
+            raise HTTPException(422, '一次导入1–500条JSON记录')
+        try:
+            payloads = [custom_payload(kind, KINDS[kind].model_validate(e)) for e in items]
+        except ValueError:
+            raise HTTPException(422, '导入失败，请核对字段、营养单位和数据范围') from None
+        if len({p['id'] for p in payloads}) != len(payloads):
+            raise HTTPException(409, '导入ID重复')
+        with connection() as db:
+            for p in payloads:
+                if db.execute('SELECT 1 FROM catalog_items WHERE kind=? AND id=?', (kind, p['id'])).fetchone():
+                    raise HTTPException(409, 'ID已存在，导入未执行；修改已有条目请使用编辑功能')
+            for p in payloads:
+                db.execute('INSERT INTO catalog_items VALUES (?,?,?,?,1,?)',
+                    (kind, p['id'], p['name'], p['category'], json.dumps(p, ensure_ascii=False)))
+        return {'imported': len(payloads)}
+
+    @routes.post('/foods')
+    def add_food(entry: FoodEntry):
+        return insert('foods', entry)
+
+    @routes.post('/exercises')
+    def add_exercise(entry: ExerciseEntry):
+        return insert('exercises', entry)
+
+    def insert(kind, entry):
+        payload = custom_payload(kind, entry)
+        with connection() as db:
+            if db.execute('SELECT 1 FROM catalog_items WHERE kind=? AND id=?', (kind, payload['id'])).fetchone():
+                raise HTTPException(409, '条目ID已存在')
+            db.execute('INSERT INTO catalog_items VALUES (?,?,?,?,1,?)',
+                (kind, payload['id'], payload['name'], payload['category'], json.dumps(payload, ensure_ascii=False)))
+        return payload
+
+    @routes.get('/{kind}/{entry_id}')
+    def detail(kind: Literal['foods', 'exercises'], entry_id: str):
+        entry = find_entry(connection, kind, entry_id)
+        if not entry:
+            raise HTTPException(404, '条目不存在或已停用')
+        return entry
+
+    def update(kind, entry_id, entry):
+        existing = find_entry(connection, kind, entry_id)
+        if not existing:
+            raise HTTPException(404, '条目不存在或已停用')
+        if kind == 'exercises' and existing.get('realtime_supported'):
+            raise HTTPException(422, '实时检测动作定义固定，请新建动作变式')
+        if entry.id and entry.id != entry_id:
+            raise HTTPException(422, '不能修改条目ID')
+        if kind == 'exercises' and existing['type'] != entry.type:
+            raise HTTPException(422, '不能改变已有动作的训练类型，请新建变式')
+        if kind == 'exercises' and (existing['equipment'] != entry.equipment or existing['weight_basis'] != entry.weight_basis):
+            raise HTTPException(422, '器械或重量口径变化会影响已有RM，请新建动作变式')
+        payload = custom_payload(kind, entry, entry_id)
+        if kind == 'exercises':
+            # Catalog editing must never change the live detector's built-in movement definition.
+            payload['realtime_supported'] = existing.get('realtime_supported', False)
+        with connection() as db:
+            db.execute('UPDATE catalog_items SET name=?,category=?,payload=? WHERE kind=? AND id=?',
+                (payload['name'], payload['category'], json.dumps(payload, ensure_ascii=False), kind, entry_id))
+        return payload
+
+    @routes.put('/foods/{entry_id}')
+    def edit_food(entry_id: str, entry: FoodEntry):
+        return update('foods', entry_id, entry)
+
+    @routes.put('/exercises/{entry_id}')
+    def edit_exercise(entry_id: str, entry: ExerciseEntry):
+        return update('exercises', entry_id, entry)
+
+    @routes.delete('/{kind}/{entry_id}')
+    def archive(kind: Literal['foods', 'exercises'], entry_id: str):
+        with connection() as db:
+            changed = db.execute('UPDATE catalog_items SET active=0 WHERE kind=? AND id=? AND active=1', (kind, entry_id))
+            if not changed.rowcount:
+                raise HTTPException(404, '条目不存在或已停用')
+        return {'archived': True}
+
+    return routes
