@@ -63,7 +63,7 @@ class _CoachPickerState extends State<CoachPicker> {
                         children: [
                           CoachPet(
                             coachId: persona.id,
-                            size: 112,
+                            size: 120,
                             animate: false,
                           ),
                           Text(

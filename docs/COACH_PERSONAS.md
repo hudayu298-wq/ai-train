@@ -1,19 +1,19 @@
 # 四位 Q 版健身教练
 
-首页教练为可拖动的 Q 版人类健身教练，使用原创代码矢量角色和 Flutter 动画。当前采用黑白灰与蓝色界面，不使用绿色主题；设计说明见 `UI_REDESIGN.md`。
+首页教练为可拖动的 Q 版人类健身教练，使用精致 3D 卡通 PNG 角色和 Flutter 动画。当前采用黑白灰与蓝色界面，不使用绿色主题；设计说明见 `UI_REDESIGN.md`。
 
 | 教练 | 形象 | 性格 | 独立提示词 |
 | --- | --- | --- | --- |
-| 阿衡 | 短发男教练、蓝色训练服 | 稳健陪练：耐心、平实，重视持续与控制 | `backend/prompts/coaches/steady.md` |
-| 小燃 | 高马尾女教练、橙色训练服 | 活力搭子：轻快、积极，把目标拆小 | `backend/prompts/coaches/energetic.md` |
-| 阿策 | 戴眼镜男教练、灰蓝夹克与记录板 | 理性规划：条理清楚，区分记录和估算 | `backend/prompts/coaches/analytical.md` |
-| 棉棉 | 齐肩发女教练、紫色运动卫衣 | 温柔支持：尊重感受、选择和恢复节奏 | `backend/prompts/coaches/gentle.md` |
+| 阿衡 | 短发男教练、蓝色运动背心、肩臂肌肉 | 稳健陪练：耐心、平实，重视持续与控制 | `backend/prompts/coaches/steady.md` |
+| 小燃 | 高马尾女教练、橙色运动上衣与黑色瑜伽裤 | 活力搭子：轻快、积极，把目标拆小 | `backend/prompts/coaches/energetic.md` |
+| 阿策 | 戴眼镜男教练、灰蓝运动背心、肩臂肌肉 | 理性规划：条理清楚，区分记录和估算 | `backend/prompts/coaches/analytical.md` |
+| 棉棉 | 短发女教练、紫色运动上衣与瑜伽裤 | 温柔支持：尊重感受、选择和恢复节奏 | `backend/prompts/coaches/gentle.md` |
 
 ## 怎么使用
 
 - 点击主页右上角“切换桌宠教练”，或桌宠下方“换教练”打开选择界面。“我→私教提醒”中也有入口。
-- 拖动完整桌宠调整位置；点击角色会做鼓励动作，长按可换教练；点减号收起成小标签，点标签恢复。
-- 待机会呼吸、眨眼；等待 AI 时进入思考状态，收到回复时举手鼓励，提醒时显示教练气泡。待机时不常驻显示对白气泡。系统开启“减少动态效果”时停止循环动画，切走主页也停止动画。
+- 拖动完整桌宠调整位置；点击角色会轻弹回应，长按可换教练；点减号收起成小标签，点标签恢复。
+- 待机会轻轻浮动呼吸；等待 AI 时倾斜并显示思考图标，收到回复时轻弹回应，提醒时显示提醒图标和教练气泡。待机时不常驻显示对白气泡。系统开启“减少动态效果”时停止循环动画，切走主页也停止动画。
 - 桌宠位于聊天记录区域，保留底部输入框。小窗口/键盘压缩区域时自动缩成小标签，拖动限制在区域内。
 - 四种性格共用现有模型 API，不需要四套模型。切换会更新角色、提示词、问候语和训练/饮食提醒；用户画像及历史记录保留。
 - 角色选择在本机持久化，并同步提醒设置到服务器。聊天请求携带明确的 `coach_id` 和昵称，旧消息保留当时的教练 ID/昵称，不随切换重命名。
@@ -33,7 +33,7 @@
 .\.tools\flutter\bin\dart.bat format mobile\lib\coaches\coach_persona.dart
 ```
 
-该脚本生成 Flutter 的 `mobile/lib/coaches/coach_persona.dart`。外形与动画在 `coach_pet.dart`，选择界面在 `coach_picker.dart`。原先生成的真人风格 PNG 保留在工作区，但已从 Flutter 资产清单移除，当前界面使用四个桌宠角色。
+该脚本生成 Flutter 的 `mobile/lib/coaches/coach_persona.dart`。外形与动画在 `coach_pet.dart`，选择界面在 `coach_picker.dart`。最终素材位于 `mobile/assets/coach/chibi/`，通过 Flutter 资产清单打包。生成方式、文件清单、完整提示词与动画范围见 `COACH_ART.md`；旧真人风格素材不打包。
 
 ## 验证与范围
 
