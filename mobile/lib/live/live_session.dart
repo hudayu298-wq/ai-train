@@ -318,7 +318,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(18),
             child: ColoredBox(
-              color: const Color(0xff182820),
+              color: const Color(0xff151a25),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -454,7 +454,7 @@ class GuidePainter extends CustomPainter {
       size.height * (guide.horizontal ? .60 : .84),
     );
     final paint = Paint()
-      ..color = ready ? const Color(0xffd8ed9a) : Colors.white70
+      ..color = ready ? const Color(0xff91b7ff) : Colors.white70
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
     canvas.drawRRect(

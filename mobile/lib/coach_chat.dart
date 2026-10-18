@@ -8,6 +8,8 @@ import 'coaches/coach_persona.dart';
 
 import 'dart:async';
 
+import 'ui_theme.dart';
+
 class CoachChat extends StatefulWidget {
   const CoachChat({
     super.key,
@@ -204,35 +206,44 @@ class _CoachChatState extends State<CoachChat> {
       margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: user ? const Color(0xff244b3c) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: user ? AppColors.ink : Colors.white,
+        border: user ? null : Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(user ? 16 : 4),
+          topRight: Radius.circular(user ? 4 : 16),
+          bottomLeft: const Radius.circular(16),
+          bottomRight: const Radius.circular(16),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!user) ...[
-                CoachAvatar(size: 36, coachId: coachId ?? widget.coachId),
-                const SizedBox(width: 10),
-              ],
-              Flexible(
-                child: Text(
-                  user ? '你' : '${coachName ?? widget.coachName} · AI 私教',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: user ? Colors.white70 : const Color(0xff537164),
+          if (!user)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!user) ...[
+                  CoachAvatar(size: 30, coachId: coachId ?? widget.coachId),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Text(
+                    user ? '你' : '${coachName ?? widget.coachName} · AI 私教',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: AppColors.muted,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+              ],
+            ),
+          if (!user) const SizedBox(height: 8),
           SelectableText(
             text,
             style: TextStyle(
-              color: user ? Colors.white : const Color(0xff21372d),
+              color: user ? Colors.white : AppColors.ink,
+              fontSize: 14,
               height: 1.55,
             ),
           ),
@@ -250,7 +261,7 @@ class _CoachChatState extends State<CoachChat> {
     childrenPadding: EdgeInsets.zero,
     title: Text(
       '已记录画像：${items.map((v) => v['label']).join('、')}',
-      style: const TextStyle(fontSize: 13, color: Color(0xff537164)),
+      style: const TextStyle(fontSize: 12, color: AppColors.primary),
     ),
     children: [
       for (final item in items)
@@ -286,22 +297,87 @@ class _CoachChatState extends State<CoachChat> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        bubble(
-                          personaFor(widget.coachId).greeting.replaceFirst(
-                            personaFor(widget.coachId).name,
-                            widget.coachName,
-                          ),
-                          footer: const Text(
-                            '你明确提供的画像信息会自动记录；对话及相关健身资料会发送到已配置的 AI 服务。',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xff64786d),
+                        if (turns.isEmpty)
+                          bubble(
+                            personaFor(widget.coachId).greeting.replaceFirst(
+                              personaFor(widget.coachId).name,
+                              widget.coachName,
+                            ),
+                            footer: TextButton.icon(
+                              onPressed: () => showDialog<void>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('对话与画像'),
+                                  content: const Text(
+                                    '你明确提供的画像信息会自动记录，可在“我”中修改。对话及相关健身资料会发送到已配置的 AI 服务。',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('知道了'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              icon: const Icon(Icons.info_outline, size: 14),
+                              label: const Text(
+                                '对话与画像',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                           ),
-                        ),
                         if (configured == false)
-                          bubble(
-                            '私教模型尚未配置。请在电脑后端的 .env 中填写 AI_API_KEY、AI_BASE_URL 和 AI_MODEL，配置后即可开始对话。',
+                          Container(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.soft,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.link_off_outlined,
+                                  size: 17,
+                                  color: AppColors.muted,
+                                ),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'AI 私教尚未连接',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () => showDialog<void>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('连接 AI 私教'),
+                                      content: const Text(
+                                        '请在后端 .env 中配置 AI_API_KEY、AI_BASE_URL 和 AI_MODEL。密钥保留在服务端，配置完成后刷新页面即可。',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('知道了'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    '连接说明',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         for (final turn in turns) ...[
                           bubble(turn['user_message'], user: true),
@@ -382,15 +458,24 @@ class _CoachChatState extends State<CoachChat> {
                         hintText: '和你的 AI 私教聊聊…',
                         counterText: '',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: AppColors.soft,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.ink,
+                      foregroundColor: Colors.white,
+                    ),
                     tooltip: '发送消息',
                     onPressed: loading || sending ? null : send,
                     icon: const Icon(Icons.arrow_upward),

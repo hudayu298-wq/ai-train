@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'coach_persona.dart';
 import 'coach_pet.dart';
+import '../ui_theme.dart';
 
 class CoachPicker extends StatefulWidget {
   const CoachPicker({
@@ -26,9 +27,9 @@ class _CoachPickerState extends State<CoachPicker> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('选择你的桌宠教练', style: Theme.of(context).textTheme.titleLarge),
+        Text('选择你的教练', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('4 种形象、4 种性格。切换后，对话风格和提醒文案会一起变化，画像和记录继续保留。'),
+        const Text('找到合拍的训练搭子。', style: TextStyle(color: AppColors.muted)),
         const SizedBox(height: 16),
         if (busy) const LinearProgressIndicator(),
         if (error != null)
@@ -44,8 +45,17 @@ class _CoachPickerState extends State<CoachPicker> {
                       ? box.maxWidth
                       : (box.maxWidth - 12) / 2,
                   child: Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(
+                        color: persona.id == widget.selectedId
+                            ? AppColors.primary
+                            : AppColors.line,
+                        width: persona.id == widget.selectedId ? 1.4 : 1,
+                      ),
+                    ),
                     color: persona.id == widget.selectedId
-                        ? persona.accent.withValues(alpha: .12)
+                        ? AppColors.selected
                         : Colors.white,
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -53,7 +63,7 @@ class _CoachPickerState extends State<CoachPicker> {
                         children: [
                           CoachPet(
                             coachId: persona.id,
-                            size: 94,
+                            size: 112,
                             animate: false,
                           ),
                           Text(
@@ -66,12 +76,6 @@ class _CoachPickerState extends State<CoachPicker> {
                           Text(
                             persona.style,
                             style: TextStyle(color: persona.accent),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            persona.tapLine,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12),
                           ),
                           const SizedBox(height: 10),
                           FilledButton(
@@ -100,7 +104,13 @@ class _CoachPickerState extends State<CoachPicker> {
                             onPressed: busy
                                 ? null
                                 : () => widget.onPrompt(persona.id),
-                            child: const Text('查看性格提示词'),
+                            child: const Text(
+                              '查看性格提示词',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.muted,
+                              ),
+                            ),
                           ),
                         ],
                       ),
