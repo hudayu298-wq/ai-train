@@ -7,6 +7,8 @@ from datetime import date
 import pytest
 
 from fastapi.testclient import TestClient
+from sqlalchemy import delete, insert
+from uuid import uuid4
 
 temp = tempfile.TemporaryDirectory()
 os.environ['FIT_DATA_DIR'] = temp.name
@@ -19,11 +21,21 @@ PLAN = {'name': '我的周计划', 'days': [{'name': '周一', 'exercises': [
     {'exercise_id': 'bench', 'weight_kg': 75, 'sets': 4, 'reps': 5, 'rest_seconds': 150}]}]}
 
 @pytest.fixture(autouse=True)
-def isolate_records():
-    with module.connection() as db:
-        db.execute('DELETE FROM records')
-        db.execute('DELETE FROM catalog_items')
+def isolate_records(monkeypatch):
+    monkeypatch.setattr(module.auth, 'rate_limit', lambda *args, **kwargs: None)
+    d = module.database
+    with d.get_engine(module.DB).begin() as db:
+        db.execute(delete(d.users))
+        db.execute(delete(d.catalog))
+        db.execute(delete(d.rate_buckets))
+        user = module.auth.new_user(db, email='legacy-tests@example.com', password_hash=module.auth.DUMMY_HASH)
+        db.execute(d.users.update().where(d.users.c.id == user['id']).values(role='admin'))
+        token = module.auth.create_session(db, user, 'test')['access_token']
+    client.headers['Authorization'] = 'Bearer ' + token
+    context = d.owner_context.set(user['id'])
     module.library.initialize(module.connection)
+    yield
+    d.owner_context.reset(context)
 
 def test_coach_partial_profile_complete_sync_and_retry(monkeypatch):
     replies = []
@@ -387,7 +399,8 @@ def test_restrictions_require_review_but_keep_user_plan():
     client.put('/api/profile', json={**PROFILE, 'restrictions': '肩部疼痛'})
     result = client.post('/api/plans', json=PLAN)
     assert result.status_code == 200
-    assert result.json()['assessment']['items'][0]['status'] == 'review_required'
+    assert result.json()['assessment']['items'][0]['status'] == 'missing_rm'
+    assert result.json()['assessment']['items'][0]['risk_warning']
     client.put('/api/profile', json=PROFILE)
 
 def test_nutrients_and_delete():
@@ -675,6 +688,132 @@ def ai_result():
         'recovery': '训练日之间恢复', 'progression': '根据完成情况复核'}
 
 
+def test_onboarding_schedule_injury_context_and_confirmation(monkeypatch):
+    assert client.get('/api/onboarding').json()['required']
+    assert client.post('/api/onboarding/complete').status_code == 422
+    facts = {**PROFILE, 'training_weekdays': [1, 3, 5], 'preferred_time': '19:00',
+             'session_minutes': 45, 'equipment': '健身房杠铃哑铃', 'training_months': 8,
+             'sleep_hours': 7, 'recovery_status': 'normal', 'restrictions': '历史肩伤',
+             'injury_status': 'historical', 'goal_detail': '提高力量', 'load_increment_kg': 2.5}
+    assert client.patch('/api/coach/profile', json=facts).status_code == 200
+    assert client.get('/api/onboarding').json()['profile_ready']
+    async def fake(profile, *args):
+        assert profile['training_weekdays'] == [1, 3, 5] and profile['training_months'] == 8
+        assert profile['restrictions'] == '历史肩伤'
+        return ai_result(), 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'generate', fake)
+    response = client.post('/api/plans/generate')
+    assert response.status_code == 200, response.text
+    draft = response.json()
+    assert [d['weekday'] for d in draft['days']] == [1, 3, 5]
+    assert all(d['start_time'] == '19:00' and d['duration_minutes'] == 45 for d in draft['days'])
+    assert draft['risk_warnings'] and len(draft['weeks']) == draft['cycle_weeks'] == 4
+    plan = client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')})
+    assert plan.status_code == 200
+    assert client.post('/api/onboarding/complete').status_code == 200
+    assert client.get('/api/onboarding').json()['required'] is False
+    assert client.patch('/api/coach/profile', json={'training_weekdays': [1, 1]}).status_code == 422
+
+
+def _progress_plan():
+    client.put('/api/profile', json=PROFILE)
+    client.post('/api/rm', json={'exercise_id': 'bench', 'weight_kg': 100, 'reps': 1,
+        'measured_on': module.nutrition_today().isoformat(), 'confirmed_maximum': True})
+    return client.post('/api/plans', json=PLAN).json()
+
+
+def _plan_workout(plan, key, *, pain=False, rpe=7, complete=True, readiness='normal', day=None):
+    return client.post('/api/workouts', json={'request_id': key, 'day': (day or module.nutrition_today()).isoformat(),
+        'plan_id': plan['id'], 'plan_day': plan['days'][0]['name'], 'completed_plan_day': complete,
+        'readiness': readiness, 'exercises': [{'exercise_id': 'bench',
+        'sets': [{'weight_kg': 75, 'reps': 5, 'rpe': rpe, 'pain': pain} for _ in range(4)]}]}).json()
+
+
+def test_progression_versions_idempotence_and_undo(monkeypatch):
+    plan = _progress_plan()
+    _plan_workout(plan, 'prior-plan-workout', day=module.nutrition_today() - module.timedelta(days=7))
+    workout = _plan_workout(plan, 'current-plan-workout')
+    calls = []
+    async def fake(messages, **kwargs):
+        import json
+        context = json.loads(messages[1]['content'])
+        assert context['increase_eligible']
+        calls.append(1)
+        return {'summary': '两次达标且保留余力，下次增加次数。', 'changes': [
+            {'exercise_id': 'bench', 'weight_kg': 75, 'reps': 6, 'reason': '连续完成目标，先增加每组1次。'}]}, 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', fake)
+    event = client.post(f"/api/workouts/{workout['id']}/progression")
+    assert event.status_code == 200, event.text
+    assert event.json()['status'] == 'applied'
+    current = client.get('/api/plans').json()[0]
+    assert current['version'] == 2 and current['days'][0]['exercises'][0]['reps'] == 6
+    assert current['cycle_week'] == 2
+    assert client.post(f"/api/workouts/{workout['id']}/progression").json() == event.json()
+    assert len(calls) == 1 and len(client.get('/api/plans').json()) == 2
+    assert client.get('/api/rm').json()[0]['weight_kg'] == 100
+    assert client.post(f"/api/plans/changes/{event.json()['id']}/undo").status_code == 200
+    assert client.get('/api/plans').json()[0]['days'][0]['exercises'][0]['reps'] == 5
+
+
+@pytest.mark.parametrize('pain,rpe,complete,readiness', [(True, 7, True, 'normal'), (False, 9, True, 'normal'), (False, 7, False, 'normal'), (False, 7, True, 'poor')])
+def test_progression_rejects_unsafe_increase_without_losing_workout(monkeypatch, pain, rpe, complete, readiness):
+    plan = _progress_plan()
+    _plan_workout(plan, 'prior-safe-workout', day=module.nutrition_today() - module.timedelta(days=7))
+    workout = _plan_workout(plan, 'current-risk-workout', pain=pain, rpe=rpe, complete=complete, readiness=readiness)
+    async def fake(*args, **kwargs):
+        return {'summary': '增加重量', 'changes': [{'exercise_id': 'bench', 'weight_kg': 77.5, 'reps': 5, 'reason': '测试无效进阶'}]}, 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', fake)
+    assert client.post(f"/api/workouts/{workout['id']}/progression").status_code == 502
+    assert len(client.get('/api/workouts').json()['items']) == 2
+    assert client.get('/api/plans').json()[0]['id'] == plan['id']
+
+
+def test_plan_edit_rejects_stale_base_and_keeps_old_version():
+    plan = _progress_plan()
+    edited = {**PLAN, 'name': '修改后计划', 'base_plan_id': plan['id']}
+    assert client.post('/api/plans', json=edited).status_code == 200
+    assert client.post('/api/plans', json=edited).status_code == 409
+    assert len(client.get('/api/plans').json()) == 2
+
+
+def test_same_day_records_do_not_count_as_two_progression_sessions(monkeypatch):
+    plan = _progress_plan()
+    _plan_workout(plan, 'same-day-first')
+    workout = _plan_workout(plan, 'same-day-second')
+    async def fake(messages, **kwargs):
+        import json
+        assert json.loads(messages[1]['content'])['increase_eligible'] is False
+        return {'summary': '今天记录两次，只视为一个训练日，保持负荷。', 'changes': []}, 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', fake)
+    result = client.post(f"/api/workouts/{workout['id']}/progression")
+    assert result.status_code == 200
+    assert result.json()['changes'] == []
+    assert client.get('/api/plans').json()[0]['days'][0]['exercises'][0]['reps'] == 5
+
+
+def test_week_completion_uses_targets_at_time_of_each_workout(monkeypatch):
+    _progress_plan()
+    plan = client.post('/api/plans', json={**PLAN, 'days': [PLAN['days'][0],
+        {**PLAN['days'][0], 'name': '周四'}]}).json()
+    _plan_workout(plan, 'previous-week-day-a', day=module.nutrition_today() - module.timedelta(days=7))
+    current = _plan_workout(plan, 'current-week-day-a')
+    async def fake(messages, **kwargs):
+        import json
+        context = json.loads(messages[1]['content'])
+        changes = [{'exercise_id': 'bench', 'weight_kg': 75, 'reps': 6, 'reason': '连续达标'}] if context['increase_eligible'] else []
+        return {'summary': '根据确认记录评估。', 'changes': changes}, 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', fake)
+    first = client.post(f"/api/workouts/{current['id']}/progression")
+    assert first.status_code == 200
+    updated = client.get('/api/plans').json()[0]
+    assert updated['cycle_week'] == 1 and updated['days'][0]['exercises'][0]['reps'] == 6
+    second = client.post('/api/workouts', json={'request_id': 'current-week-day-b',
+        'plan_id': updated['id'], 'plan_day': '周四', 'completed_plan_day': True,
+        'exercises': [{'exercise_id': 'bench', 'sets': [{'weight_kg': 75, 'reps': 5, 'rpe': 7} for _ in range(4)]}]}).json()
+    assert client.post(f"/api/workouts/{second['id']}/progression").status_code == 200
+    assert client.get('/api/plans').json()[0]['cycle_week'] == 2
+
+
 def test_plan_uses_workout_memory_and_rejects_stale_training_draft(monkeypatch):
     client.put('/api/profile', json=PROFILE)
     client.post('/api/workouts', json=workout_payload())
@@ -708,7 +847,7 @@ def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
     assert saved.json()['model'] == 'test-model'
     assert len(client.get('/api/plans').json()) == 1
     client.put('/api/profile', json={**PROFILE, 'weight_kg': 80})
-    assert client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 409
+    assert client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 200
 
 def test_ai_rejects_invalid_day_count_and_excessive_load(monkeypatch):
     client.put('/api/profile', json=PROFILE)

@@ -5,7 +5,13 @@ __pycache__/
 /data/
 mobile/.dart_tool/
 mobile/build/
+mobile/android/build/
 mobile/.flutter-plugins-dependencies
 .env
 .env.*
 !.env.example
+*.p12
+*.pfx
+*.jks
+*.keystore
+/mobile/android/key.properties
