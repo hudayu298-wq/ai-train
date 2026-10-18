@@ -6,6 +6,10 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+try:
+    from . import exercise_content
+except ImportError:
+    import exercise_content
 
 class FoodEntry(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
@@ -39,6 +43,12 @@ class ExerciseEntry(BaseModel):
     weight_basis: str = Field(default='含器械总重量；同一器械和变式单独记录', max_length=300)
     view: str = Field(default='尚未支持实时检测，可记录训练。', max_length=500)
     source_label: str = Field(default='用户维护的动作条目，未审核', max_length=500)
+    movement_pattern: str | None = Field(default=None, max_length=80)
+    joint_actions: list[str] | None = Field(default=None, max_length=15)
+    primary_muscles: list[str] | None = Field(default=None, max_length=15)
+    secondary_muscles: list[str] | None = Field(default=None, max_length=15)
+    body_regions: list[str] | None = Field(default=None, max_length=15)
+    technique: exercise_content.Technique | None = None
 
 KINDS = {'foods': FoodEntry, 'exercises': ExerciseEntry}
 
@@ -58,22 +68,27 @@ def initialize(connection):
 
 def all_entries(connection, kind):
     with connection() as db:
-        return [json.loads(r['payload']) for r in db.execute(
+        entries = [json.loads(r['payload']) for r in db.execute(
             'SELECT payload FROM catalog_items WHERE kind=? AND active=1 ORDER BY rowid', (kind,))]
+    return [exercise_content.enrich(e) for e in entries] if kind == 'exercises' else entries
 
 def find_entry(connection, kind, entry_id):
     with connection() as db:
         row = db.execute('SELECT payload FROM catalog_items WHERE kind=? AND id=? AND active=1', (kind, entry_id)).fetchone()
-    return json.loads(row['payload']) if row else None
+    if not row:
+        return None
+    entry = json.loads(row['payload'])
+    return exercise_content.enrich(entry) if kind == 'exercises' else entry
 
 def custom_payload(kind, entry, entry_id=None):
-    payload = entry.model_dump(exclude={'id'})
+    payload = entry.model_dump(exclude={'id'}, exclude_none=True)
     payload.update(id=entry_id or entry.id or f'{kind}_{uuid4().hex}', source_kind='user',
         review_status='user_supplied')
     if kind == 'foods':
         payload.update(basis_g=100)
     else:
         payload.update(realtime_supported=False, rm_supported=entry.type == 'weighted')
+        payload = exercise_content.enrich(payload)
     return payload
 
 def router(connection):
@@ -81,17 +96,28 @@ def router(connection):
 
     @routes.get('/{kind}')
     def search(kind: Literal['foods', 'exercises'], q: str = Query(default='', max_length=100),
-               category: str = '', type: str = '', limit: int = Query(default=50, ge=1, le=200),
+               category: str = '', type: str = '', body_part: str = '', limit: int = Query(default=50, ge=1, le=200),
                offset: int = Query(default=0, ge=0)):
         entries = all_entries(connection, kind)
-        categories = sorted({e['category'] for e in entries})
+        categories = sorted({e['movement_pattern'] if kind == 'exercises' else e['category'] for e in entries})
+        body_parts = sorted({part for e in entries for part in e.get('body_regions', [])})
         term = q.strip().casefold()
-        result = [e for e in entries if (not category or e['category'] == category)
+        result = [e for e in entries if (not category or e['category'] == category or e.get('movement_pattern') == category)
+                  and (not body_part or body_part in e.get('body_regions', []))
                   and (not type or e.get('type') == type)
                   and (not term or term in json.dumps([e['name'], e.get('aliases', []),
-                       e.get('original_name', ''), e.get('equipment', '')], ensure_ascii=False).casefold())]
+                       e.get('original_name', ''), e.get('equipment', ''), e.get('joint_actions', []),
+                       e.get('primary_muscles', []), e.get('movement_pattern', '')], ensure_ascii=False).casefold())]
         return {'items': result[offset:offset + limit], 'total': len(result),
-                'limit': limit, 'offset': offset, 'categories': categories}
+                'limit': limit, 'offset': offset, 'categories': categories, 'body_parts': body_parts,
+                'category_dimension': 'joint_movement' if kind == 'exercises' else 'food_type'}
+
+    @routes.get('/exercises/{entry_id}/analysis-context')
+    def context(entry_id: str):
+        entry = find_entry(connection, 'exercises', entry_id)
+        if not entry:
+            raise HTTPException(404, '动作不存在或已停用')
+        return exercise_content.analysis_context(entry)
 
     @routes.get('/{kind}/export')
     def export(kind: Literal['foods', 'exercises']):
@@ -144,8 +170,8 @@ def router(connection):
         existing = find_entry(connection, kind, entry_id)
         if not existing:
             raise HTTPException(404, '条目不存在或已停用')
-        if kind == 'exercises' and existing.get('realtime_supported'):
-            raise HTTPException(422, '实时检测动作定义固定，请新建动作变式')
+        if kind == 'exercises' and existing.get('realtime_supported') and (entry.name != existing['name'] or entry.view != existing['view'] or entry.category != existing['category']):
+            raise HTTPException(422, '实时检测动作的身份和拍摄定义固定；可编辑教学文案，其他变式请新建')
         if entry.id and entry.id != entry_id:
             raise HTTPException(422, '不能修改条目ID')
         if kind == 'exercises' and existing['type'] != entry.type:
@@ -156,6 +182,7 @@ def router(connection):
         if kind == 'exercises':
             # Catalog editing must never change the live detector's built-in movement definition.
             payload['realtime_supported'] = existing.get('realtime_supported', False)
+            payload['content_version'] = 'user-draft-1'
         with connection() as db:
             db.execute('UPDATE catalog_items SET name=?,category=?,payload=? WHERE kind=? AND id=?',
                 (payload['name'], payload['category'], json.dumps(payload, ensure_ascii=False), kind, entry_id))

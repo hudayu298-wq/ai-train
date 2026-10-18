@@ -129,11 +129,22 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
     }
-    final response = await http.Response.fromStream(
-      await req.send().timeout(
-        Duration(seconds: path == '/plans/generate' ? 110 : 20),
-      ),
-    ).timeout(Duration(seconds: path == '/plans/generate' ? 110 : 20));
+    final response =
+        await http.Response.fromStream(
+          await req.send().timeout(
+            Duration(
+              seconds: path == '/plans/generate' || path == '/movement/analyze'
+                  ? 110
+                  : 20,
+            ),
+          ),
+        ).timeout(
+          Duration(
+            seconds: path == '/plans/generate' || path == '/movement/analyze'
+                ? 110
+                : 20,
+          ),
+        );
     final result = jsonDecode(response.body);
     if (response.statusCode >= 400) {
       throw Exception(
@@ -159,7 +170,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> initialize() => perform(() async {
-    catalog = Map<String, dynamic>.from(await request('/catalog?extended=true'));
+    catalog = Map<String, dynamic>.from(
+      await request('/catalog?extended=true'),
+    );
     normalizeSelections();
     final p = await request('/profile');
     if (p != null) {
@@ -210,7 +223,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> refreshCatalog() async {
-    final result = Map<String, dynamic>.from(await request('/catalog?extended=true'));
+    final result = Map<String, dynamic>.from(
+      await request('/catalog?extended=true'),
+    );
     if (!mounted) return;
     setState(() {
       catalog = result;
@@ -222,6 +237,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   void openLibrary() => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => LibraryPage(
+        assetBase: apiBase,
         request: (path, method, body) =>
             request(path, method: method, body: body),
         onChanged: refreshCatalog,
@@ -638,7 +654,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               ? null
               : () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => LiveSession(exerciseId: liveExercise),
+                    builder: (_) => LiveSession(
+                      exerciseId: liveExercise,
+                      assetBase: apiBase,
+                      exerciseDetails: Map<String, dynamic>.from(
+                        (catalog!['exercises'] as List).firstWhere(
+                          (e) => e['id'] == liveExercise,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
         ),

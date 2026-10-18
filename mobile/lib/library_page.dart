@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
+
+import 'exercise_reference.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -9,18 +12,26 @@ class LibraryPage extends StatefulWidget {
     required this.request,
     required this.onChanged,
     this.onSelect,
+    this.assetBase = 'http://127.0.0.1:8000',
   });
   final Future<dynamic> Function(String, String, Object?) request;
   final Future<void> Function() onChanged;
   final void Function(String, Map<String, dynamic>)? onSelect;
+  final String assetBase;
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  String kind = 'foods', category = '', type = '';
+  String kind = 'foods',
+      category = '',
+      type = '',
+      bodyPart = '',
+      cameraView = 'unknown';
   final query = TextEditingController();
   List<dynamic> entries = [], categories = [];
+  List<dynamic> bodyParts = [];
+  final Map<String, dynamic> analyses = {};
   int total = 0;
   bool busy = false;
   String? message;
@@ -36,8 +47,69 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
+  static List<String> lines(String value) => value
+      .split('\n')
+      .map((v) => v.trim())
+      .where((v) => v.isNotEmpty)
+      .toList();
+  static String initialText(Map<String, dynamic>? item, String key) {
+    final value = ['setup', 'execution', 'key_points', 'cautions'].contains(key)
+        ? item?['technique']?[key]
+        : item?[key];
+    return value is List ? value.join('\n') : '${value ?? ''}';
+  }
+
+  Future<void> analyzeFrames(Map<String, dynamic> entry) async {
+    if (busy) return;
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        allowMultiple: true,
+        withData: true,
+      );
+      if (picked == null) return;
+      if (picked.files.length < 2 || picked.files.length > 6) {
+        throw Exception('请选择同一动作的2–6张训练截图');
+      }
+      final frames = <Map<String, dynamic>>[];
+      for (final file in picked.files) {
+        if (file.bytes == null || file.size > 2 * 1024 * 1024) {
+          throw Exception('每张截图需为JPG/PNG且不超过2MB');
+        }
+        frames.add({
+          'mime_type': file.extension?.toLowerCase() == 'png'
+              ? 'image/png'
+              : 'image/jpeg',
+          'image_base64': base64Encode(file.bytes!),
+        });
+      }
+      if (!mounted) return;
+      setState(() {
+        busy = true;
+        message = '正在分析选取截图；仅检查可见问题，结果供复核';
+      });
+      final result = await widget.request('/movement/analyze', 'POST', {
+        'exercise_id': entry['id'],
+        'camera_view': cameraView,
+        'frames': frames,
+      });
+      if (mounted) {
+        setState(() {
+          analyses[entry['id']] = result;
+          message = '截图分析完成（实验功能）';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => message = '$e');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> load({bool more = false}) async {
     if (busy) return;
+    bool refetch = false;
     setState(() {
       busy = true;
       message = null;
@@ -48,6 +120,7 @@ class _LibraryPageState extends State<LibraryPage> {
           'q': query.text,
           'category': category,
           'type': type,
+          'body_part': bodyPart,
           'limit': '50',
           'offset': more ? '${entries.length}' : '0',
         },
@@ -61,6 +134,15 @@ class _LibraryPageState extends State<LibraryPage> {
         setState(() {
           entries = more ? [...entries, ...result['items']] : result['items'];
           categories = result['categories'];
+          bodyParts = result['body_parts'] ?? [];
+          if (category.isNotEmpty && !categories.contains(category)) {
+            category = '';
+            refetch = true;
+          }
+          if (bodyPart.isNotEmpty && !bodyParts.contains(bodyPart)) {
+            bodyPart = '';
+            refetch = true;
+          }
           total = result['total'];
         });
       }
@@ -68,6 +150,9 @@ class _LibraryPageState extends State<LibraryPage> {
       if (mounted) setState(() => message = '$e');
     } finally {
       if (mounted) setState(() => busy = false);
+    }
+    if (refetch && mounted) {
+      await load();
     }
   }
 
@@ -86,7 +171,16 @@ class _LibraryPageState extends State<LibraryPage> {
           }
         : {
             'name': '动作名称（注明变式）',
-            'category': '主要部位',
+            'category': '默认训练部位',
+            'movement_pattern': '关节动作模式（如水平推）',
+            'joint_actions': '关节动作（每行一项）',
+            'body_regions': '训练部位（每行一项）',
+            'primary_muscles': '主要肌群（每行一项）',
+            'secondary_muscles': '辅助肌群（每行一项）',
+            'setup': '准备姿势（每行一项）',
+            'execution': '执行步骤（每行一项）',
+            'key_points': '变式细节（每行一项）',
+            'cautions': '注意事项（每行一项）',
             'equipment': '器械',
             'summary': '动作说明',
             'weight_basis': '重量记录口径',
@@ -94,7 +188,7 @@ class _LibraryPageState extends State<LibraryPage> {
           };
     final controllers = {
       for (final key in fields.keys)
-        key: TextEditingController(text: '${item?[key] ?? ''}'),
+        key: TextEditingController(text: initialText(item, key)),
     };
     String state = item?['state'] ?? 'prepared',
         exerciseType = item?['type'] ?? 'weighted';
@@ -122,7 +216,28 @@ class _LibraryPageState extends State<LibraryPage> {
                       padding: const EdgeInsets.only(top: 10),
                       child: TextField(
                         controller: controllers[field.key],
-                        enabled: !saving,
+                        maxLines:
+                            [
+                              'joint_actions',
+                              'body_regions',
+                              'primary_muscles',
+                              'secondary_muscles',
+                              'setup',
+                              'execution',
+                              'key_points',
+                              'cautions',
+                            ].contains(field.key)
+                            ? 3
+                            : 1,
+                        enabled:
+                            !saving &&
+                            !(item?['realtime_supported'] == true &&
+                                [
+                                  'name',
+                                  'category',
+                                  'equipment',
+                                  'weight_basis',
+                                ].contains(field.key)),
                         keyboardType:
                             [
                               'kcal',
@@ -217,6 +332,27 @@ class _LibraryPageState extends State<LibraryPage> {
                           payload['state'] = state;
                         } else {
                           payload['type'] = exerciseType;
+                          for (final key in [
+                            'joint_actions',
+                            'body_regions',
+                            'primary_muscles',
+                            'secondary_muscles',
+                          ]) {
+                            payload[key] = lines(controllers[key]!.text);
+                          }
+                          final technique = item?['technique'] is Map
+                              ? Map<String, dynamic>.from(item!['technique'])
+                              : <String, dynamic>{};
+                          for (final key in [
+                            'setup',
+                            'execution',
+                            'key_points',
+                            'cautions',
+                          ]) {
+                            technique[key] = lines(controllers[key]!.text);
+                            payload.remove(key);
+                          }
+                          payload['technique'] = technique;
                         }
                         if (item != null) {
                           for (final key in ['aliases', 'difficulty', 'view']) {
@@ -367,8 +503,10 @@ class _LibraryPageState extends State<LibraryPage> {
                           kind = values.first;
                           category = '';
                           type = '';
+                          bodyPart = '';
                           entries = [];
                           categories = [];
+                          bodyParts = [];
                           query.clear();
                         });
                         load();
@@ -377,8 +515,8 @@ class _LibraryPageState extends State<LibraryPage> {
               const SizedBox(height: 12),
               Text(
                 kind == 'foods'
-                    ? '按名称、英文别名搜索。营养为每100克可食部分；请核对生熟状态、来源和实际品牌。'
-                    : '负重和自重分开浏览。只有卧推、高杠深蹲和传统硬拉支持实验性实时检测；自重当前仅资料浏览。',
+                    ? '按食物类型分类，营养为每100克可食部分；请核对生熟状态、来源和实际品牌。'
+                    : '按关节动作模式分类，并标明训练部位。新增动作不自动获得实时检测能力；动图为二维示意。',
               ),
               TextField(
                 controller: query,
@@ -394,7 +532,9 @@ class _LibraryPageState extends State<LibraryPage> {
               DropdownButtonFormField<String>(
                 key: ValueKey('$kind-$category-${categories.length}'),
                 initialValue: category,
-                decoration: const InputDecoration(labelText: '分类'),
+                decoration: InputDecoration(
+                  labelText: kind == 'foods' ? '食物类型' : '关节动作分类',
+                ),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('全部分类')),
                   for (final c in categories)
@@ -407,6 +547,23 @@ class _LibraryPageState extends State<LibraryPage> {
                         load();
                       },
               ),
+              if (kind == 'exercises')
+                DropdownButtonFormField<String>(
+                  key: ValueKey('body-$bodyPart-${bodyParts.length}'),
+                  initialValue: bodyPart,
+                  decoration: const InputDecoration(labelText: '训练部位'),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('全部部位')),
+                    for (final part in bodyParts)
+                      DropdownMenuItem(value: part, child: Text(part)),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (v) {
+                          setState(() => bodyPart = v!);
+                          load();
+                        },
+                ),
               if (kind == 'exercises')
                 DropdownButtonFormField<String>(
                   key: ValueKey(type),
@@ -476,7 +633,7 @@ class _LibraryPageState extends State<LibraryPage> {
                         subtitle: Text(
                           kind == 'foods'
                               ? '${e['category']} · ${e['kcal']} kcal / 100g'
-                              : '${e['category']} · ${e['equipment']} · ${e['type'] == 'weighted' ? '负重' : '自重'}',
+                              : '${e['movement_pattern']} · ${(e['body_regions'] as List? ?? []).join(' / ')} · ${e['equipment']}',
                         ),
                         children: [
                           Padding(
@@ -495,6 +652,10 @@ class _LibraryPageState extends State<LibraryPage> {
                                   if (e['original_name'] != null)
                                     Text('原始名称：${e['original_name']}'),
                                 ] else ...[
+                                  ExerciseReference(
+                                    exercise: e,
+                                    assetBase: widget.assetBase,
+                                  ),
                                   Text(e['summary'] ?? ''),
                                   Text('重量口径：${e['weight_basis']}'),
                                   Text(
@@ -503,6 +664,56 @@ class _LibraryPageState extends State<LibraryPage> {
                                         : '暂无实时检测',
                                   ),
                                   Text(e['view'] ?? ''),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    '实验性截图观察：选取同一动作的2–6张JPG/PNG（每张≤2MB）。图片会发送到后端及已配置的视觉模型；不能代替连续录像或实时纠错。',
+                                  ),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: cameraView,
+                                    decoration: const InputDecoration(
+                                      labelText: '截图拍摄角度',
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'unknown',
+                                        child: Text('未确认'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'side',
+                                        child: Text('正侧面'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'front',
+                                        child: Text('正面'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'oblique',
+                                        child: Text('斜侧面'),
+                                      ),
+                                    ],
+                                    onChanged: busy
+                                        ? null
+                                        : (v) =>
+                                              setState(() => cameraView = v!),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => analyzeFrames(e),
+                                    icon: const Icon(Icons.image_search),
+                                    label: const Text('上传训练截图进行 AI 观察'),
+                                  ),
+                                  if (analyses.containsKey(e['id'])) ...[
+                                    Text(analyses[e['id']]['summary']),
+                                    for (final observation
+                                        in analyses[e['id']]['observations'])
+                                      Text(
+                                        '疑似观察：${observation['evidence']}\n复核要点：${observation['check_point']}\n建议：${observation['guidance']}\n截图索引：${observation['frame_indices']}',
+                                      ),
+                                    Text(
+                                      '参考版本：${analyses[e['id']]['content_version']}',
+                                    ),
+                                  ],
                                 ],
                                 Text('来源：${e['source_label']}'),
                                 Text(
@@ -529,11 +740,10 @@ class _LibraryPageState extends State<LibraryPage> {
                                           kind == 'foods' ? '用于饮食记录' : '用于训练记录',
                                         ),
                                       ),
-                                    if (e['realtime_supported'] != true)
-                                      TextButton(
-                                        onPressed: busy ? null : () => edit(e),
-                                        child: const Text('编辑'),
-                                      ),
+                                    TextButton(
+                                      onPressed: busy ? null : () => edit(e),
+                                      child: const Text('编辑'),
+                                    ),
                                     TextButton(
                                       onPressed: busy ? null : () => archive(e),
                                       child: const Text('停用'),
