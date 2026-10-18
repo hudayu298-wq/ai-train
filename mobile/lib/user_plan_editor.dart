@@ -69,10 +69,25 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           .toList();
 
   List<String> get movementCategories =>
-      (widget.exercises.keys.map(movementFor).toSet().toList()..sort());
+      (widget.exercises.keys
+          .where(
+            (id) => bodyRegion.isEmpty || regionsFor(id).contains(bodyRegion),
+          )
+          .map(movementFor)
+          .toSet()
+          .toList()
+        ..sort());
 
   List<String> get bodyRegions =>
-      (widget.exercises.keys.expand(regionsFor).toSet().toList()..sort());
+      (widget.exercises.keys
+          .where(
+            (id) =>
+                movementCategory.isEmpty || movementFor(id) == movementCategory,
+          )
+          .expand(regionsFor)
+          .toSet()
+          .toList()
+        ..sort());
 
   Map<String, String> get filteredExercises => {
     for (final e in widget.exercises.entries)
@@ -83,8 +98,18 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   };
 
   void filterExercises({String? category, String? region}) {
-    movementCategory = category ?? movementCategory;
-    bodyRegion = region ?? bodyRegion;
+    if (category != null) {
+      movementCategory = category;
+      if (!bodyRegions.contains(bodyRegion)) bodyRegion = '';
+    }
+    if (region != null) {
+      bodyRegion = region;
+      if (!movementCategories.contains(movementCategory)) movementCategory = '';
+    }
+    normalizeExerciseSelection();
+  }
+
+  void normalizeExerciseSelection() {
     if (!filteredExercises.containsKey(exercise)) {
       exercise = filteredExercises.keys.firstOrNull ?? '';
     }
@@ -93,8 +118,13 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   @override
   void didUpdateWidget(covariant UserPlanEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!movementCategories.contains(movementCategory)) movementCategory = '';
+    final allCategories = widget.exercises.keys.map(movementFor).toSet();
+    if (!allCategories.contains(movementCategory)) movementCategory = '';
     if (!bodyRegions.contains(bodyRegion)) bodyRegion = '';
+    normalizeExerciseSelection();
+    if (!widget.exercises.containsKey(rmExercise)) {
+      rmExercise = widget.exercises.keys.firstOrNull ?? '';
+    }
   }
 
   @override
@@ -391,6 +421,21 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
             (v) => exercise = v,
             options: filteredExercises,
           ),
+          if (movementCategory.isNotEmpty || bodyRegion.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => setState(() {
+                        movementCategory = '';
+                        bodyRegion = '';
+                        normalizeExerciseSelection();
+                      }),
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                label: const Text('清除动作筛选'),
+              ),
+            ),
           Text(
             filteredExercises.isEmpty
                 ? '当前分类与部位下没有可用动作，请调整筛选。'
