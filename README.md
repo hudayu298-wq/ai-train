@@ -35,6 +35,8 @@ cd D:\ai-train
 
 ## Flutter 客户端
 
+Android USB真机调试见 `docs/ANDROID_DEBUG.md`；SDK安装与手机授权完成后，在项目根目录运行 `./debug-android.ps1`。
+
 Flutter SDK 安装在 `.tools/flutter`，不提交进版本控制。
 
 ```powershell
