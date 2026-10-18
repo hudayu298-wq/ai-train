@@ -14,13 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner, library, movement_analysis, coach, reminders
+    from . import ai_planner, library, movement_analysis, coach, reminders, workouts
 except ImportError:
     import ai_planner
     import library
     import movement_analysis
     import coach
     import reminders
+    import workouts
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -233,6 +234,10 @@ def save_user_plan(plan: UserPlan):
             with connection() as db:
                 if draft['coach_profile_snapshot'] != coach.state(db)['facts']:
                     raise HTTPException(409, '画像偏好已变化，请重新生成AI计划')
+        if 'training_revision' in draft:
+            with connection() as db:
+                if workouts.revision(db) != draft['training_revision']:
+                    raise HTTPException(409, '训练档案已变化，请重新生成AI计划')
     validate_plan_exercises(payload)
     names = {e['id']: e['name'] for e in exercise_entries()}
     for day in payload['days']:
@@ -263,6 +268,8 @@ async def generate_plan():
     rm_snapshot = get_rm()
     with connection() as db:
         coach_snapshot = coach.state(db)['facts']
+        training_snapshot = workouts.memory(db)
+        training_revision = workouts.revision(db)
     baselines = {r['exercise_id']: r for r in rm_snapshot if r['confirmed_maximum']
         and r['reference_1rm_kg'] and (nutrition_today() - date.fromisoformat(r['measured_on'])).days <= 90}
     available = [e for e in exercise_entries() if e['type'] == 'weighted']
@@ -271,7 +278,8 @@ async def generate_plan():
     schema = AIPlan.model_json_schema()
     schema['$defs']['PlanExercise']['properties']['exercise_id']['enum'] = [e['id'] for e in available]
     schema['x-exercise-catalog'] = [{k: e[k] for k in ('id', 'name', 'category', 'equipment', 'weight_basis')} for e in available]
-    raw, model = await ai_planner.generate({**profile, **coach_snapshot}, baselines, schema)
+    raw, model = await ai_planner.generate({**profile, **coach_snapshot,
+        'training_memory': training_snapshot}, baselines, schema)
     try:
         generated = AIPlan.model_validate(raw).model_dump()
         if len(generated['days']) != profile['days'] or len({d['name'] for d in generated['days']}) != profile['days']:
@@ -295,8 +303,11 @@ async def generate_plan():
     with connection() as db:
         if coach.state(db)['facts'] != coach_snapshot:
             raise HTTPException(409, '生成过程中画像偏好已变化，请重新生成')
+        if workouts.revision(db) != training_revision:
+            raise HTTPException(409, '生成过程中训练档案已变化，请重新生成')
     draft = save('plan_draft', {**generated, 'model': model, 'profile_snapshot': profile,
-        'coach_profile_snapshot': coach_snapshot, 'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
+        'coach_profile_snapshot': coach_snapshot, 'training_revision': training_revision,
+        'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
     return {**draft, 'generation_id': draft['id'], 'assessment': assess_plan(draft)}
 
 def nutrition_target(profile):
@@ -385,12 +396,16 @@ def coach_context(message):
                [e['name'], *e.get('aliases', [])])]
     with connection() as db:
         reminder_settings = reminders.preferences(db)
+        training_memory = workouts.memory(db)
+        known_profile = coach.state(db)['facts']
     return {
         'coach_persona': {'id': reminder_settings['coach_id'], 'coach_name': reminder_settings['coach_name'], 'virtual_character': True},
         'reminder_settings': reminder_settings,
         'today': nutrition_today().isoformat(),
         'nutrition': nutrition_summary(), 'rm': get_rm(),
         'current_plan': get_plans()[:1], 'recent_training': get_training()[:5],
+        'training_memory': training_memory,
+        'known_profile': known_profile,
         'exercise_catalog': [{k: e.get(k) for k in
             ('id', 'name', 'type', 'movement_pattern', 'body_regions', 'weight_basis', 'realtime_supported')}
             for e in exercises],
@@ -402,6 +417,7 @@ def coach_context(message):
 
 app.include_router(coach.router(connection, Profile, coach_context))
 app.include_router(reminders.router(connection, Profile))
+app.include_router(workouts.router(connection, require_weighted, coach_context))
 
 @app.post('/api/media')
 async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: str = Form(''), file: UploadFile = File(...)):

@@ -406,6 +406,146 @@ def test_pain_does_not_prescribe_more_load():
     assert response.status_code == 200
     assert '停止自动加重' in response.json()['feedback']
 
+
+def workout_payload(key='workout-test-0001', **changes):
+    return {'request_id': key, 'day': module.nutrition_today().isoformat(),
+        'duration_minutes': 40, 'notes': '昨晚睡眠较少，本次感觉有点疲劳',
+        'exercises': [{'exercise_id': 'bench', 'notes': '下次注意控制下降',
+            'detected_reps': 99, 'sets': [
+                {'weight_kg': 40, 'reps': 8, 'rpe': 7, 'pain': False},
+                {'weight_kg': 40, 'reps': 6, 'rpe': 9, 'pain': True}]}], **changes}
+
+
+def test_workout_saved_once_and_profile_memory_uses_confirmed_sets():
+    payload = workout_payload()
+    result = client.post('/api/workouts', json=payload)
+    assert result.status_code == 200
+    first = result.json()
+    assert first['summary']['total_sets'] == 2
+    assert first['summary']['total_reps'] == 14  # Not the detector's 99.
+    assert first['summary']['total_volume_kg'] == 560
+    assert first['summary']['has_pain']
+    assert '暂停' in first['summary']['exercises'][0]['next_step']
+    assert client.post('/api/workouts', json=payload).json()['id'] == first['id']
+    assert client.post('/api/workouts', json={**payload, 'notes': '变更'}).status_code == 409
+    profile = client.get('/api/coach/profile').json()
+    assert profile['facts'] == {}  # No automatic diagnosis or experience changes.
+    memory = profile['training_memory']
+    assert memory['session_count'] == 1 and memory['total_sets'] == 2
+    assert memory['training_days_last_28'] == 1
+    assert memory['exercise_progress'][0]['reps'] == 14
+    assert memory['recent_discomfort'][0]['source_workout_id'] == first['id']
+    assert len(client.get('/api/training').json()) == 2
+    assert len(client.get('/api/workouts').json()['items']) == 1
+    assert client.get('/api/rm').json() == []
+
+
+def test_workout_validation_atomicity_and_dates():
+    from datetime import timedelta
+    base = workout_payload()
+    invalid = {**base, 'exercises': base['exercises'] + [{**base['exercises'][0], 'exercise_id': 'pushup'}]}
+    assert client.post('/api/workouts', json=invalid).status_code == 422
+    assert client.get('/api/training').json() == []
+    assert client.get('/api/workouts').json()['items'] == []
+    assert client.post('/api/workouts', json={**base,
+        'day': (module.nutrition_today() + timedelta(days=1)).isoformat()}).status_code == 422
+    assert client.post('/api/workouts', json={**base, 'exercises': base['exercises'] * 2}).status_code == 422
+    base['exercises'][0]['sets'][0]['reps'] = 0
+    assert client.post('/api/workouts', json=base).status_code == 422
+
+
+def test_high_effort_set_is_not_hidden_by_average_rpe():
+    data = workout_payload()
+    for s in data['exercises'][0]['sets']:
+        s['pain'] = False
+    result = client.post('/api/workouts', json=data).json()['summary']['exercises'][0]
+    assert result['average_rpe'] == 8 and result['max_rpe'] == 9
+    assert '用力较高' in result['next_step']
+
+
+def test_workout_comparison_never_mixes_weight_basis():
+    result = client.post('/api/workouts', json=workout_payload()).json()
+    old = __import__('copy').deepcopy(result)
+    old['exercises'][0]['weight_basis'] = '另一种负重口径'
+    assert module.workouts.summarize(result, [old])['exercises'][0]['comparison'] is None
+
+
+def test_workout_comparison_uses_exact_variant_and_previous_date():
+    from datetime import timedelta
+    old_day = (module.nutrition_today() - timedelta(days=3)).isoformat()
+    before = workout_payload('workout-compare-1', day=old_day)
+    before['exercises'][0]['sets'] = [{'weight_kg': 40, 'reps': 5, 'rpe': 7, 'pain': False}]
+    first = client.post('/api/workouts', json=before).json()
+    latest = client.post('/api/workouts', json=workout_payload('workout-compare-2')).json()
+    comparison = latest['summary']['exercises'][0]['comparison']
+    assert comparison['workout_id'] == first['id'] and comparison['volume_delta_kg'] == 360
+    other = workout_payload('workout-compare-3')
+    other['exercises'][0]['exercise_id'] = 'squat'
+    assert client.post('/api/workouts', json=other).json()['summary']['exercises'][0]['comparison'] is None
+    oldest = workout_payload('workout-compare-4', day=(module.nutrition_today() - timedelta(days=10)).isoformat())
+    assert client.post('/api/workouts', json=oldest).json()['summary']['exercises'][0]['comparison'] is None
+    assert client.get('/api/coach/profile').json()['training_memory']['last_training_day'] == module.nutrition_today().isoformat()
+
+
+def test_legacy_training_joins_memory_without_migration_or_fake_sessions():
+    client.post('/api/training', json={'exercise_id': 'bench', 'weight_kg': 20,
+        'sets': 3, 'reps': 5, 'rpe': 7, 'pain': False})
+    listing = client.get('/api/workouts').json()
+    assert listing['items'][0]['source'] == 'legacy'
+    assert listing['training_memory']['session_count'] == 1
+    assert listing['training_memory']['total_sets'] == 3
+    assert listing['items'][0].get('ai_review') is None
+
+
+def test_ai_review_failure_keeps_training_and_valid_review_is_cached(monkeypatch):
+    from fastapi import HTTPException
+    result = client.post('/api/workouts', json=workout_payload()).json()
+    url = '/api/workouts/' + result['id'] + '/review'
+    async def unavailable(*args, **kwargs):
+        raise HTTPException(503, '未配置模型')
+    monkeypatch.setattr(module.ai_planner, 'chat_json', unavailable)
+    assert client.post(url, json={'coach_id': 'gentle'}).status_code == 503
+    assert client.get('/api/coach/profile').json()['training_memory']['session_count'] == 1
+    seen = []
+    async def valid(messages, **kwargs):
+        seen.append(messages)
+        return {'summary': '卧推记录2组，最后一组有不适。', 'strengths': ['你记录了每组实际次数和RPE。'],
+                'next_steps': ['暂停引起不适的动作，先确认当前恢复情况。']}, 'test-review'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', valid)
+    reviewed = client.post(url, json={'coach_id': 'gentle'}).json()
+    assert reviewed['ai_review']['coach_id'] == 'gentle'
+    assert reviewed['ai_review']['source'] == 'ai_advice'
+    assert '棉棉' in seen[0][0]['content'] and '不能声称看过动作' in seen[0][0]['content']
+    context = __import__('json').loads(seen[0][1]['content'])
+    assert context['context']['training_memory']['session_count'] == 1
+    assert context['workout']['exercises'][0]['sets'][1]['pain']
+    assert client.post(url, json={'coach_id': 'gentle'}).status_code == 200
+    assert len(seen) == 1
+    assert client.get('/api/coach/profile').json()['facts'] == {}
+
+
+def test_invalid_review_is_not_persisted(monkeypatch):
+    result = client.post('/api/workouts', json=workout_payload()).json()
+    async def invalid(*args, **kwargs):
+        return {'summary': '无效', 'strengths': [], 'next_steps': []}, 'bad-model'
+    monkeypatch.setattr(module.ai_planner, 'chat_json', invalid)
+    assert client.post('/api/workouts/' + result['id'] + '/review', json={}).status_code == 502
+    assert client.get('/api/workouts').json()['items'][0]['ai_review'] is None
+
+
+def test_chat_receives_training_memory_and_detects_concurrent_workout(monkeypatch):
+    client.post('/api/workouts', json=workout_payload())
+    seen = []
+    async def fake(message, history, profile, context):
+        seen.append(context)
+        client.post('/api/workouts', json=workout_payload('workout-concurrent-02'))
+        return {'reply': '训练已记录', 'profile_updates': []}, 'test-model'
+    monkeypatch.setattr(module.coach, 'respond', fake)
+    assert client.post('/api/coach/messages', json={
+        'request_id': 'workout-chat-001', 'message': '我下次卧推怎么安排？'}).status_code == 409
+    assert seen[0]['training_memory']['session_count'] == 1
+    assert client.get('/api/coach/messages').json()['turns'] == []
+
 def test_media_is_pending_not_fake_analysis():
     result = client.post('/api/media', data={'kind': 'video', 'exercise_id': 'squat'},
                          files={'file': ('test.mp4', b'local-test', 'video/mp4')})
@@ -533,6 +673,22 @@ def ai_result():
         'exercises': [{**PLAN['days'][0]['exercises'][0], 'weight_kg': None}]} for i in range(3)],
         'rationale': '根据增肌目标安排', 'warmup': '逐步热身',
         'recovery': '训练日之间恢复', 'progression': '根据完成情况复核'}
+
+
+def test_plan_uses_workout_memory_and_rejects_stale_training_draft(monkeypatch):
+    client.put('/api/profile', json=PROFILE)
+    client.post('/api/workouts', json=workout_payload())
+    captured = []
+    async def fake(profile, rm, schema):
+        captured.append(profile['training_memory'])
+        return ai_result(), 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'generate', fake)
+    draft = client.post('/api/plans/generate').json()
+    assert captured[0]['session_count'] == 1
+    assert captured[0]['recent_discomfort'][0]['exercise_id'] == 'bench'
+    client.post('/api/workouts', json=workout_payload('workout-new-after-plan'))
+    response = client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')})
+    assert response.status_code == 409 and '训练档案' in response.text
 
 def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
     client.put('/api/profile', json=PROFILE)

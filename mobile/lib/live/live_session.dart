@@ -16,10 +16,12 @@ class LiveSession extends StatefulWidget {
     required this.exerciseId,
     this.exerciseDetails,
     this.assetBase = 'http://127.0.0.1:8000',
+    this.onFinish,
   });
   final String exerciseId;
   final Map<String, dynamic>? exerciseDetails;
   final String assetBase;
+  final Future<bool> Function(List<int>, int, String)? onFinish;
   @override
   State<LiveSession> createState() => _LiveSessionState();
 }
@@ -42,6 +44,11 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
   String status = '点击开启相机，按示意框摆放支架';
   String? failure;
   int generation = 0;
+  final completedSets = <int>[];
+  int? trainingStarted;
+  bool finishing = false;
+  bool workoutEnded = false;
+  final captureId = 'capture-${DateTime.now().microsecondsSinceEpoch}';
   bool get native =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -286,6 +293,38 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> finishWorkout() async {
+    if (finishing ||
+        running ||
+        completedSets.isEmpty ||
+        widget.onFinish == null) {
+      return;
+    }
+    setState(() {
+      finishing = true;
+      workoutEnded = true;
+    });
+    try {
+      final minutes =
+          ((clock.elapsedMilliseconds - (trainingStarted ?? 0)) / 60000)
+              .ceil()
+              .clamp(1, 600);
+      await releaseCamera();
+      if (!mounted) return;
+      setState(() => status = '检测已结束，请确认实际完成记录');
+      final saved = await widget.onFinish!(
+        List<int>.from(completedSets),
+        minutes,
+        captureId,
+      );
+      if (saved && mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => failure = '打开训练记录失败：$e');
+    } finally {
+      if (mounted) setState(() => finishing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text('${guide.name} · 实时训练')),
@@ -344,6 +383,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 12),
         Text(status),
+        Text('本次已结束 ${completedSets.length} 组检测；完成训练后需确认并保存实际组次。'),
         if (!native) const Text('Web 当前展示拍摄模板；实时姿态检测需在 Android / iOS 客户端运行。'),
         if (failure != null)
           Text(failure!, style: const TextStyle(color: Colors.red)),
@@ -396,10 +436,12 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
                   !ready ||
                   !angleConfirmed ||
                   (sound && !audioConfirmed) ||
-                  running
+                  running ||
+                  workoutEnded
               ? null
               : () {
                   engine.startSet();
+                  trainingStarted ??= clock.elapsedMilliseconds;
                   setState(() {
                     running = true;
                     reps = 0;
@@ -412,7 +454,10 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
           onPressed: !running
               ? null
               : () {
-                  setState(() => running = false);
+                  setState(() {
+                    running = false;
+                    completedSets.add(reps);
+                  });
                   engine.resetMotion();
                   unawaited(tts.stop());
                   showDialog<void>(
@@ -420,7 +465,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
                     builder: (context) => AlertDialog(
                       title: const Text('本组结束'),
                       content: Text(
-                        '检测到 $reps 次动作周期。\n计次为实验结果，未保存为正式训练记录；请在训练页确认重量、组次。',
+                        '检测到 $reps 次动作周期，已暂存为第 ${completedSets.length} 组检测结果。\n可继续下一组；整次训练结束后确认重量、实际次数和感受，再生成复盘。',
                       ),
                       actions: [
                         TextButton(
@@ -433,6 +478,14 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
                 },
           child: const Text('结束本组'),
         ),
+        if (widget.onFinish != null)
+          FilledButton.icon(
+            onPressed: running || finishing || completedSets.isEmpty
+                ? null
+                : finishWorkout,
+            icon: const Icon(Icons.task_alt),
+            label: Text(finishing ? '正在结束检测…' : '结束训练并记录复盘'),
+          ),
         const Text(
           '取景框是摆位参考，不会自动验证拍摄角度或识别杠铃。检测可能跟踪画面中其他人，开始前请确认。视频不录制、不上传；语音使用系统音频输出，耳机需自行连接。',
         ),
