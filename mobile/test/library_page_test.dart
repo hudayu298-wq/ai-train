@@ -3,6 +3,73 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liftlab/library_page.dart';
 
 void main() {
+  testWidgets(
+    'filters by joint movement and body region and shows shared details',
+    (tester) async {
+      final calls = <String>[];
+      final entry = {
+        'id': 'dumbbell_curl',
+        'name': '哑铃弯举',
+        'equipment': '哑铃',
+        'type': 'weighted',
+        'movement_pattern': '肘屈曲',
+        'joint_actions': ['肘屈伸'],
+        'body_regions': ['手臂'],
+        'primary_muscles': ['肱二头肌'],
+        'secondary_muscles': ['肱肌'],
+        'weight_basis': '单只重量',
+        'source_label': '教学草稿',
+        'content_version': 'movement-1.0',
+        'technique': {
+          'setup': ['站稳'],
+          'execution': ['控制屈肘'],
+          'key_points': ['保持上臂相对稳定'],
+          'cautions': ['不靠明显躯干摆动'],
+          'common_errors': [],
+          'not_observable': ['疼痛'],
+          'sources': [],
+        },
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryPage(
+            onChanged: () async {},
+            request: (path, method, body) async {
+              calls.add(path);
+              final exercises = path.startsWith('/library/exercises');
+              return {
+                'items': exercises ? [entry] : <dynamic>[],
+                'categories': exercises ? ['肘屈曲'] : ['乳制品'],
+                'body_parts': exercises ? ['手臂'] : [],
+                'total': exercises ? 1 : 0,
+              };
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('动作库'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('全部分类'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('肘屈曲').last);
+      await tester.pumpAndSettle();
+      expect(Uri.parse(calls.last).queryParameters['category'], '肘屈曲');
+      await tester.tap(find.text('全部部位'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('手臂').last);
+      await tester.pumpAndSettle();
+      expect(Uri.parse(calls.last).queryParameters['body_part'], '手臂');
+      await tester.ensureVisible(find.text('哑铃弯举'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('哑铃弯举'));
+      await tester.pumpAndSettle();
+      expect(find.text('关节动作模式：肘屈曲'), findsOneWidget);
+      expect(find.text('• 保持上臂相对稳定'), findsOneWidget);
+      expect(find.text('主要肌群'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('searches library and adds a food using per-100g values', (
     tester,
   ) async {

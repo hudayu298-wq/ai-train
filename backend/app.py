@@ -14,10 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner, library
+    from . import ai_planner, library, movement_analysis
 except ImportError:
     import ai_planner
     import library
+    import movement_analysis
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -403,6 +404,32 @@ async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: 
 @app.get('/api/media')
 def get_media():
     return records('media')
+
+@app.get('/api/movement/status')
+def movement_status():
+    return movement_analysis.status()
+
+@app.post('/api/movement/analyze')
+async def analyze_movement(request: movement_analysis.AnalysisRequest):
+    entry = library.find_entry(connection, 'exercises', request.exercise_id)
+    if not entry:
+        raise HTTPException(422, '动作不存在或已停用')
+    result = await movement_analysis.analyze(entry, request)
+    # Only the text/evidence references are saved; raw images are not kept by this endpoint.
+    return save('movement_analysis', {**result, 'exercise_id':entry['id'], 'exercise_name':entry['name'],
+        'created_on':nutrition_today().isoformat()})
+
+@app.get('/api/media/{media_id}/analysis-context')
+def media_analysis_context(media_id: str):
+    media = next((m for m in records('media') if m['id']==media_id and m['kind']=='video'), None)
+    if not media:
+        raise HTTPException(404, '训练录像不存在')
+    entry = library.find_entry(connection, 'exercises', media['exercise_id'])
+    if not entry:
+        raise HTTPException(422, '录像对应动作已停用')
+    return library.exercise_content.analysis_context(entry)
+
+app.mount('/assets', StaticFiles(directory=ROOT/'backend/assets'), name='assets')
 
 flutter_web = ROOT / 'mobile' / 'build' / 'web'
 if flutter_web.exists():

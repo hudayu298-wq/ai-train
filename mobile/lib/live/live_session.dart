@@ -8,10 +8,18 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 import 'coaching_engine.dart';
+import '../exercise_reference.dart';
 
 class LiveSession extends StatefulWidget {
-  const LiveSession({super.key, required this.exerciseId});
+  const LiveSession({
+    super.key,
+    required this.exerciseId,
+    this.exerciseDetails,
+    this.assetBase = 'http://127.0.0.1:8000',
+  });
   final String exerciseId;
+  final Map<String, dynamic>? exerciseDetails;
+  final String assetBase;
   @override
   State<LiveSession> createState() => _LiveSessionState();
 }
@@ -284,6 +292,20 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
     body: ListView(
       padding: const EdgeInsets.all(18),
       children: [
+        if (widget.exerciseDetails != null)
+          ExpansionTile(
+            title: const Text('本动作的关节动作、部位与注意细节'),
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: ExerciseReference(
+                  exercise: widget.exerciseDetails!,
+                  assetBase: widget.assetBase,
+                  showDemo: false,
+                ),
+              ),
+            ],
+          ),
         Text(
           guide.instructions,
           style: const TextStyle(fontSize: 16, height: 1.6),

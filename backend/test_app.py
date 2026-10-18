@@ -95,6 +95,84 @@ def test_ai_uses_weighted_catalog_and_rejects_unknown_actions(monkeypatch):
     monkeypatch.setattr(module.ai_planner,'generate',fake)
     assert client.post('/api/plans/generate').status_code == 502
 
+def test_joint_classification_and_gif_assets():
+    result=client.get('/api/library/exercises?category=肘屈曲&body_part=手臂').json()
+    assert result['category_dimension']=='joint_movement'
+    assert len(result['items'])==3
+    assert '水平推' in result['categories']
+    assert '胸部' in result['body_parts']
+    assert client.get('/api/library/foods?category=乳制品').json()['category_dimension']=='food_type'
+    from PIL import Image
+    for entry in client.get('/api/catalog?extended=true').json()['exercises']:
+        assert entry['joint_actions'] and entry['primary_muscles']
+        assert entry['technique']['key_points']
+        file=module.ROOT/'backend'/entry['demo']['url'].lstrip('/')
+        with Image.open(file) as gif:
+            assert gif.format=='GIF' and gif.n_frames>1
+    assert client.get('/assets/exercise-demos/bench.gif').status_code==200
+
+def test_reference_is_shared_with_prompts_and_edits_change_hash():
+    payload={'name':'测试肘屈曲','category':'手臂','equipment':'哑铃',
+        'movement_pattern':'肘屈曲','joint_actions':['肘屈伸'],'body_regions':['手臂'],
+        'primary_muscles':['肱二头肌'],'secondary_muscles':['肱肌'],
+        'technique':{'setup':['站稳'],'execution':['屈肘并控制返回'],'key_points':['不要摆动'],
+            'common_errors':[{'id':'custom_swing','description':'观察躯干摆动','guidance':'站稳后复核'}]}}
+    entry=client.post('/api/library/exercises',json=payload).json()
+    before=client.get('/api/library/exercises/'+entry['id']+'/analysis-context').json()
+    assert before['reference']['joint_actions']==entry['joint_actions']
+    assert before['reference']['technique']==entry['technique']
+    assert '膝超过脚尖' in before['system_prompt']
+    payload['technique']['key_points']=['新的共同提示文案']
+    assert client.put('/api/library/exercises/'+entry['id'],json=payload).status_code==200
+    after=client.get('/api/library/exercises/'+entry['id']+'/analysis-context').json()
+    assert after['reference_hash']!=before['reference_hash']
+    assert after['reference']['technique']['key_points']==['新的共同提示文案']
+    bench=module.library.find_entry(module.connection,'exercises','bench')
+    context=module.library.exercise_content.analysis_context(bench,'front',2)
+    assert 'bench_visible_control' in context['allowed_cue_ids']
+    assert 'bench_bar_path' not in context['allowed_cue_ids']  # Unvalidated book candidate stays reference-only.
+    changed={**bench,'technique':{**bench['technique'],'key_points':['更新的共同教学文案']}}
+    update=client.put('/api/library/exercises/bench',json=changed)
+    assert update.status_code==200
+    assert update.json()['realtime_supported'] is True
+    assert client.get('/api/library/exercises/bench/analysis-context').json()['reference']['technique']['key_points']==['更新的共同教学文案']
+
+def test_visual_analysis_sends_shared_reference_and_rejects_wrong_evidence(monkeypatch):
+    import base64, io, json, httpx
+    from PIL import Image
+    stream=io.BytesIO();Image.new('RGB',(32,32),'white').save(stream,format='JPEG')
+    frame={'mime_type':'image/jpeg','image_base64':base64.b64encode(stream.getvalue()).decode()}
+    config={'VISION_API_KEY':'test-secret','VISION_BASE_URL':'https://example.com/v1','VISION_MODEL':'test-vision'}
+    monkeypatch.setattr(module.movement_analysis,'settings',lambda:config)
+    observed=[]
+    result={'status':'observations','summary':'疑似观察，建议复核','observations':[{
+        'cue_id':'bench_visible_control','evidence':'截图中的左右位置疑似不一致',
+        'frame_indices':[0,1],'confidence':'medium'}]}
+    def handler(request):
+        body=json.loads(request.content)
+        reference=json.loads(body['messages'][1]['content'][0]['text'])['analysis_context']['reference']
+        observed.append(reference)
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result)}}]})
+    original_client=httpx.AsyncClient
+    monkeypatch.setattr(module.movement_analysis.httpx,'AsyncClient',lambda **kwargs:original_client(transport=httpx.MockTransport(handler),**kwargs))
+    request={'exercise_id':'bench','camera_view':'front','frames':[frame,frame]}
+    response=client.post('/api/movement/analyze',json=request)
+    assert response.status_code==200
+    assert observed[0]['primary_muscles']==['胸大肌']
+    assert observed[0]['movement_pattern']=='水平推'
+    assert response.json()['reference']==observed[0]
+    assert response.json()['observations'][0]['guidance']==observed[0]['technique']['common_errors'][0]['guidance']
+    assert 'image_base64' not in json.dumps(module.records('movement_analysis'))
+    result['observations'][0]['frame_indices']=[99]
+    assert client.post('/api/movement/analyze',json=request).status_code==502
+    result['observations'][0]['frame_indices']=[0]
+    result['observations'][0]['cue_id']='squat_visible_control'
+    assert client.post('/api/movement/analyze',json=request).status_code==502
+    assert len(module.records('movement_analysis'))==1
+    invalid={**frame,'image_base64':base64.b64encode(b'not an image').decode()}
+    assert client.post('/api/movement/analyze',json={**request,'frames':[invalid,invalid]}).status_code==422
+    assert client.post('/api/movement/analyze',json={**request,'camera_view':'side'}).json()['status']=='insufficient_evidence'
+
 def test_user_plan_is_preserved_and_versioned():
     assert client.put('/api/profile', json=PROFILE).status_code == 200
     first = client.post('/api/plans', json=PLAN).json()

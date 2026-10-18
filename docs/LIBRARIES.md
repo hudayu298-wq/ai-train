@@ -20,14 +20,14 @@ Flutter右上角“书本”图标进入资料库；饮食页也有搜索入口�
 
 ## 动作
 
-初始38条：31个负重动作与7个自重资料条目。包含部位、器械、难度、变式、重量口径与检测能力。
+初始38条：31个负重动作与7个自重资料条目。按18类关节动作模式分类，附部位、关节动作、主要/辅助肌群、器械、难度、变式、重量口径与检测能力。详见 `docs/MOVEMENT_CONTENT.md`。
 
 - 负重动作可用于计划、RM及训练记录，AI生成使用当前有效负重动作库。
 - 自重动作当前只浏览资料；计次/时长与负重记录口径不同，后续在独立模块实现。
-- 只有bench、squat、deadlift有现有实验性实时计次。新增其他动作不启用检测，核心三项定义不允许编辑，可新建变式。
+- 只有bench、squat、deadlift有现有实验性实时计次。新增其他动作不启用检测，核心三项的身份与拍摄定义固定；教学文案可以编辑，并共同用于AI参考。
 - 高杠与低杠深蹲、传统与罗马尼亚硬拉是不同ID，RM不相互套用。
 - 已有动作的类型、器械和重量口径不可改变；变化时新建变式，避免旧RM被用于不同单位或器械。
-- 动作说明是项目分类内容，详细动作教学、演示视频及纠错规则尚未完成审核，不冒充书籍逐页验证内容。
+- 动作说明是项目分类内容，现有教学草稿、原创示意GIF及纠错规则尚未完成审核，不冒充书籍逐页验证内容。
 
 ## 存储与接口
 
@@ -37,7 +37,7 @@ SQLite新增`catalog_items`表，按kind与id唯一。启动使用`INSERT OR IGN
 
 | 接口 | 用途 |
 |---|---|
-| GET /api/library/foods 或 exercises | q关键词、category分类、type训练类型、limit/offset分页 |
+| GET /api/library/foods 或 exercises | q关键词、category关节动作/食物类型、body_part训练部位、type训练类型、limit/offset分页 |
 | GET /api/library/{kind}/{id} | 条目详情 |
 | POST /api/library/foods 或 exercises | 新增条目 |
 | PUT /api/library/{kind}/{id} | 编辑条目 |
