@@ -1,6 +1,6 @@
 # Android USB真机调试
 
-当前检查：Flutter在 `.tools/flutter`，Android SDK尚未安装。Android项目最低系统API 24（Android 7.0），编译SDK 36，NDK 28.2.13676358。
+本项目的Flutter位于 `.tools/flutter`，本地Android SDK安装路径为 `.tools/android-sdk`，启动脚本会自动检测此路径。Android项目最低系统API 24（Android 7.0），编译SDK 36，NDK 28.2.13676358。
 
 ## 首次准备
 
@@ -20,6 +20,12 @@ cd D:\ai-train
 4. 手机：设置 → 关于手机 → 连续点击版本号打开开发者选项；进入开发者选项开启USB调试。不同品牌入口名称可能不同。
 5. 用支持数据传输的USB线连接，解锁手机并确认允许这台电脑调试。如设备无法识别，检查数据线、USB模式和厂商Windows驱动。
 
+荣耀手机：同时开启“USB调试”和“仅充电模式下允许ADB调试”。如果Windows已有“ADB Interface”但ADB设备列表仍为空，检查是否使用通用WinUSB驱动；本机通过安装荣耀官方手机助理，恢复了Android Composite ADB Interface驱动并成功识别Magic7 Pro（Android 16）。安装程序的管理员授权和厂商协议需在电脑上确认。
+
+若环境设置了匿名HTTP格式的 `HTTPS_PROXY`，调试脚本会临时为Gradle设置代理，并在退出时恢复原来的Java选项。
+
+荣耀系统可能将 `persist.log.tag` 设为 `S`，导致Flutter一直等待VM Service。脚本检测到此配置时，仅临时设置 `log.tag.flutter=I`，允许发现调试服务；手机重启后失效。
+
 ## 启动
 
 ```powershell
@@ -38,6 +44,12 @@ cd D:\ai-train
 运行后按r热重载，按R热重启，按q结束调试。原生依赖或权限配置变化需重新构建安装。
 
 ## 优先验证
+
+本机已成功构建调试APK：`mobile/build/app/outputs/flutter-apk/app-debug.apk`。若安装返回 `INSTALL_FAILED_ABORTED: User rejected permissions`，保持手机解锁，在手机确认USB安装提示；如系统提供“USB安装”开关，检查该开关。允许后重新运行调试脚本。
+
+真机验证：已在荣耀Magic7 Pro上安装并启动调试版，连接Dart VM Service，热重载成功；画像、计划、训练记录、RM和当天饮食的首次加载均返回HTTP 200。实时相机和耳机语音需要在手机上继续实际验证。
+
+项目已关闭Kotlin增量编译，以避免Windows上项目与Pub缓存分别位于D盘和C盘时的跨盘缓存错误。
 
 - 画像、用户计划、RM数据和当天饮食是否正常读写。
 - 动作 → 进入实时训练 → 开启相机，确认系统相机权限。
