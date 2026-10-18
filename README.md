@@ -26,6 +26,8 @@ cd D:\ai-train
 
 打开 http://127.0.0.1:8000；接口文档 http://127.0.0.1:8000/docs。
 
+`start.ps1` 默认独立后台运行，关闭终端后服务仍可使用；日志在 `data/logs`。需要前台查看日志时使用 `./start.ps1 -Foreground`（先停止已有后台服务）。电脑重启后重新执行启动脚本。预览地址应在运行项目的同一台电脑上打开。
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend -q
 ```
