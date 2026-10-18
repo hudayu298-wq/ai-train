@@ -9,6 +9,7 @@ import 'package:http_parser/http_parser.dart';
 import 'live/live_session.dart';
 import 'user_plan_editor.dart';
 import 'library_page.dart';
+import 'coach_chat.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -44,6 +45,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   List<dynamic> plans = [], training = [], meals = [], media = [];
   List<dynamic> rmRecords = [];
   Map<String, dynamic>? nutrition;
+  Map<String, dynamic>? coachProfile;
+  int chatRefreshToken = 0;
   Timer? nutritionTimer;
   String mealType = 'breakfast';
   static const mealTypes = {
@@ -52,17 +55,21 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     'dinner': '晚餐',
     'snack': '加餐',
   };
-  final age = TextEditingController(text: '28');
-  final height = TextEditingController(text: '175');
-  final weight = TextEditingController(text: '70');
+  final age = TextEditingController();
+  final height = TextEditingController();
+  final weight = TextEditingController();
   final restrictions = TextEditingController();
+  final dietaryPreferences = TextEditingController();
+  final equipment = TextEditingController();
+  final trainingPreferences = TextEditingController();
+  final schedule = TextEditingController();
   final load = TextEditingController(text: '20');
   final sets = TextEditingController(text: '3');
   final reps = TextEditingController(text: '5');
   final rpe = TextEditingController(text: '7');
   final grams = TextEditingController(text: '150');
-  String sex = 'male', goal = 'muscle_gain', experience = 'beginner';
-  int days = 2;
+  String sex = '', goal = '', experience = '';
+  int days = 0;
   String exercise = 'bench', food = 'rice', liveExercise = 'bench';
   bool pain = false;
 
@@ -85,6 +92,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       height,
       weight,
       restrictions,
+      dietaryPreferences,
+      equipment,
+      trainingPreferences,
+      schedule,
       load,
       sets,
       reps,
@@ -133,14 +144,20 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         await http.Response.fromStream(
           await req.send().timeout(
             Duration(
-              seconds: path == '/plans/generate' || path == '/movement/analyze'
+              seconds:
+                  path == '/plans/generate' ||
+                      path == '/movement/analyze' ||
+                      path == '/coach/messages'
                   ? 110
                   : 20,
             ),
           ),
         ).timeout(
           Duration(
-            seconds: path == '/plans/generate' || path == '/movement/analyze'
+            seconds:
+                path == '/plans/generate' ||
+                    path == '/movement/analyze' ||
+                    path == '/coach/messages'
                 ? 110
                 : 20,
           ),
@@ -174,19 +191,41 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       await request('/catalog?extended=true'),
     );
     normalizeSelections();
-    final p = await request('/profile');
-    if (p != null) {
-      age.text = '${p['age']}';
-      height.text = '${p['height_cm']}';
-      weight.text = '${p['weight_kg']}';
-      restrictions.text = p['restrictions'];
-      sex = p['sex'];
-      goal = p['goal'];
-      experience = p['experience'];
-      days = p['days'];
-    }
+    await loadCoachProfile();
+    chatRefreshToken++;
     await refresh();
   });
+
+  Future<void> loadCoachProfile() async {
+    final result = Map<String, dynamic>.from(await request('/coach/profile'));
+    if (!mounted) return;
+    final p = result['facts'] as Map;
+    setState(() {
+      coachProfile = result;
+      for (final e in {
+        'age': age,
+        'height_cm': height,
+        'weight_kg': weight,
+        'restrictions': restrictions,
+        'dietary_preferences': dietaryPreferences,
+        'equipment': equipment,
+        'training_preferences': trainingPreferences,
+        'schedule': schedule,
+      }.entries) {
+        e.value.text = '${p[e.key] ?? ''}';
+      }
+      sex = p['sex'] ?? '';
+      goal = p['goal'] ?? '';
+      experience = p['experience'] ?? '';
+      days = p['days'] ?? 0;
+    });
+  }
+
+  Future<void> profileFromChat() async {
+    await loadCoachProfile();
+    await refresh();
+  }
+
   Future<void> refresh() async {
     final result = await Future.wait([
       request('/plans'),
@@ -342,47 +381,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Widget exerciseSelect() =>
       select('动作变式', exercise, exercises, (v) => exercise = v);
 
-  Widget overview() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Container(
-        padding: const EdgeInsets.all(28),
-        margin: const EdgeInsets.only(bottom: 20),
-        decoration: BoxDecoration(
-          color: const Color(0xff244b3c),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('训练有据，进步有迹。', style: TextStyle(color: Color(0xffd8ed9a))),
-            SizedBox(height: 14),
-            Text(
-              '把目标变成\n下一次进步。',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text('卧推 / 深蹲 / 硬拉', style: TextStyle(color: Colors.white70)),
-          ],
-        ),
-      ),
-      panel('你的训练路线', [
-        Text('训练记录 ${training.length} 条 · 当天饮食 ${meals.length} 条'),
-        const SizedBox(height: 12),
-        const Text('负重训练已开放；自重训练将在后续版本加入。'),
-        const SizedBox(height: 12),
-        const Text('本机单用户开发版。AI 识别未接入，上传不生成评分。'),
-      ]),
-      planPanel(),
-    ],
-  );
   Widget planPanel() {
     if (plans.isEmpty) {
-      return panel('我的训练计划', [const Text('先保存画像，再到训练页生成AI计划并确认保存。')]);
+      return panel('我的训练计划', [const Text('先通过私教对话或“我”补齐画像，再生成 AI 计划并确认保存。')]);
     }
     final p = plans.first;
     return panel('我的计划 · ${p['name']}', [
@@ -425,7 +426,22 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ]);
   }
 
-  Widget profilePage() => panel('认识你的起点', [
+  Widget profilePage() => panel('我的用户画像', [
+    const Text('对话中明确提供的信息会自动记录在这里，也可以手动修改。'),
+    if (coachProfile != null) ...[
+      const SizedBox(height: 12),
+      Text(
+        coachProfile!['complete'] == true
+            ? '基础画像已完整，可用于训练计划和饮食目标。'
+            : '待补充：${(coachProfile!['missing_fields'] as List).map((k) => coachProfile!['labels'][k]).join('、')}',
+      ),
+      const SizedBox(height: 12),
+      for (final e in (coachProfile!['facts'] as Map).entries)
+        Text(
+          '${coachProfile!['labels'][e.key]}：${CoachChat.displayValue(e.value)}',
+        ),
+      const Divider(height: 28),
+    ],
     field('年龄（18岁及以上）', age),
     field('身高 / cm', height),
     field('体重 / kg', weight),
@@ -448,22 +464,31 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       '7': '7 天',
     }, (v) => days = int.parse(v)),
     field('伤病或训练限制（用于评估提示）', restrictions, numeric: false),
+    field('饮食偏好', dietaryPreferences, numeric: false),
+    field('可用器械', equipment, numeric: false),
+    field('训练偏好', trainingPreferences, numeric: false),
+    field('时间安排', schedule, numeric: false),
     action('保存画像', () async {
       await request(
-        '/profile',
-        method: 'PUT',
+        '/coach/profile',
+        method: 'PATCH',
         body: {
-          'age': integer(age),
-          'height_cm': number(height),
-          'weight_kg': number(weight),
-          'sex': sex,
-          'goal': goal,
-          'experience': experience,
-          'days': days,
+          if (age.text.trim().isNotEmpty) 'age': integer(age),
+          if (height.text.trim().isNotEmpty) 'height_cm': number(height),
+          if (weight.text.trim().isNotEmpty) 'weight_kg': number(weight),
+          if (sex.isNotEmpty) 'sex': sex,
+          if (goal.isNotEmpty) 'goal': goal,
+          if (experience.isNotEmpty) 'experience': experience,
+          if (days > 0) 'days': days,
           'restrictions': restrictions.text,
+          'dietary_preferences': dietaryPreferences.text,
+          'equipment': equipment.text,
+          'training_preferences': trainingPreferences.text,
+          'schedule': schedule.text,
         },
       );
       notify('画像已保存');
+      await loadCoachProfile();
       await refresh();
     }),
   ]);
@@ -743,23 +768,99 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     notify(result['message']);
   }
 
+  static const pageTitles = ['AI 私教', '我', '训练计划', '饮食', 'AI 陪训'];
+
+  void navigate(int destination) {
+    Navigator.of(context).pop();
+    setState(() => tab = destination);
+  }
+
+  Future<void> showCoachPrompt() => perform(() async {
+    final result = await request('/coach/prompt');
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('AI 私教提示词'),
+        content: SizedBox(
+          width: 640,
+          child: SingleChildScrollView(child: SelectableText(result['prompt'])),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  });
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('LiftLab · 训练有据'),
+      title: Text(pageTitles[tab]),
       actions: [
-        IconButton(
-          onPressed: () => openLibrary(
-            initialKind: tab == 2 || tab == 4 ? 'exercises' : 'foods',
+        if (tab != 0)
+          IconButton(
+            onPressed: () => openLibrary(
+              initialKind: tab == 2 || tab == 4 ? 'exercises' : 'foods',
+            ),
+            tooltip: '食物与动作库',
+            icon: const Icon(Icons.menu_book_outlined),
           ),
-          tooltip: '食物与动作库',
-          icon: const Icon(Icons.menu_book_outlined),
-        ),
         IconButton(
           onPressed: busy ? null : initialize,
           icon: const Icon(Icons.refresh),
         ),
       ],
+    ),
+    drawer: Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 28, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.spa_outlined, color: Color(0xff244b3c), size: 32),
+                  SizedBox(height: 12),
+                  Text(
+                    'LiftLab',
+                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+                  ),
+                  Text('你的 AI 私教', style: TextStyle(color: Color(0xff537164))),
+                ],
+              ),
+            ),
+            for (final item in const [
+              (0, Icons.chat_bubble_outline, 'AI 私教'),
+              (3, Icons.restaurant_outlined, '饮食'),
+              (2, Icons.fitness_center, '训练计划'),
+              (4, Icons.videocam_outlined, 'AI 陪训'),
+              (1, Icons.person_outline, '我'),
+            ])
+              ListTile(
+                leading: Icon(item.$2),
+                title: Text(item.$3),
+                selected: tab == item.$1,
+                selectedTileColor: const Color(0xffe3ebdf),
+                onTap: () => navigate(item.$1),
+              ),
+            const Spacer(),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('私教提示词'),
+              onTap: () {
+                Navigator.of(context).pop();
+                showCoachPrompt();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
     ),
     body: Column(
       children: [
@@ -780,8 +881,13 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               : IndexedStack(
                   index: tab,
                   children: [
+                    CoachChat(
+                      request: (path, method, body) =>
+                          request(path, method: method, body: body),
+                      onProfileChanged: profileFromChat,
+                      refreshToken: chatRefreshToken,
+                    ),
                     for (final page in [
-                      overview,
                       profilePage,
                       trainingPage,
                       nutritionPage,
@@ -799,23 +905,6 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                   ],
                 ),
         ),
-      ],
-    ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: tab,
-      onDestinationSelected: (v) => setState(() => tab = v),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.dashboard_outlined),
-          label: '总览',
-        ),
-        NavigationDestination(icon: Icon(Icons.person_outline), label: '画像'),
-        NavigationDestination(icon: Icon(Icons.fitness_center), label: '训练'),
-        NavigationDestination(
-          icon: Icon(Icons.restaurant_outlined),
-          label: '饮食',
-        ),
-        NavigationDestination(icon: Icon(Icons.videocam_outlined), label: '动作'),
       ],
     ),
   );

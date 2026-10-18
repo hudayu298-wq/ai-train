@@ -25,6 +25,116 @@ def isolate_records():
         db.execute('DELETE FROM catalog_items')
     module.library.initialize(module.connection)
 
+def test_coach_partial_profile_complete_sync_and_retry(monkeypatch):
+    replies = []
+    async def fake(message, history, profile, context):
+        replies.append((message, history, profile, context))
+        if not history:
+            return {'reply': '了解，你希望优先增肌。每周可以训练几天？', 'profile_updates': [
+                {'field': 'age', 'value': 28, 'evidence': '28岁'},
+                {'field': 'goal', 'value': 'muscle_gain', 'evidence': '想增肌'}]}, 'test-model'
+        return {'reply': '资料已足够制定草稿，可以到训练计划页生成。', 'profile_updates': [
+            {'field': 'height_cm', 'value': 175, 'evidence': '175cm'},
+            {'field': 'weight_kg', 'value': 70, 'evidence': '70kg'},
+            {'field': 'sex', 'value': 'male', 'evidence': '男性'},
+            {'field': 'experience', 'value': 'beginner', 'evidence': '刚开始训练'},
+            {'field': 'days', 'value': 3, 'evidence': '每周3天'},
+            {'field': 'dietary_preferences', 'value': '不喝牛奶', 'evidence': '不喝牛奶'}]}, 'test-model'
+    monkeypatch.setattr(module.coach, 'respond', fake)
+    first = {'request_id': 'request-0001', 'message': '我28岁，想增肌'}
+    result = client.post('/api/coach/messages', json=first)
+    assert result.status_code == 200
+    assert result.json()['profile']['facts'] == {'age': 28, 'goal': 'muscle_gain'}
+    assert not result.json()['profile']['complete']
+    assert client.get('/api/profile').json() is None
+    assert client.get('/api/nutrition/today').json()['target_status'] == 'missing'
+    assert client.post('/api/coach/messages', json=first).status_code == 200
+    assert len(replies) == 1  # Retry does not bill another request or duplicate the turn.
+    assert client.post('/api/coach/messages', json={**first, 'message': '其他消息'}).status_code == 409
+    second = {'request_id': 'request-0002',
+              'message': '我175cm、70kg，男性，刚开始训练，每周3天，不喝牛奶'}
+    assert client.post('/api/coach/messages', json=second).json()['profile']['complete']
+    profile = client.get('/api/profile').json()
+    assert profile['age'] == 28 and profile['weight_kg'] == 70 and profile['days'] == 3
+    assert client.get('/api/nutrition/today').json()['target_status'] == 'ready'
+    assert len(client.get('/api/coach/messages').json()['turns']) == 2
+    assert replies[1][2]['age'] == 28 and len(replies[1][1]) == 1
+    assert replies[0][3]['video_evidence_available'] is False
+    assert client.patch('/api/coach/profile', json={'weight_kg': 72}).status_code == 200
+    assert client.get('/api/profile').json()['weight_kg'] == 72
+    assert client.get('/api/coach/profile').json()['facts']['dietary_preferences'] == '不喝牛奶'
+    client.put('/api/profile', json={**PROFILE, 'weight_kg': 74})
+    assert client.get('/api/coach/profile').json()['facts']['weight_kg'] == 74
+
+@pytest.mark.parametrize('update', [
+    {'field': 'age', 'value': 28, 'evidence': '历史消息28岁'},
+    {'field': 'age', 'value': 12, 'evidence': '28岁'},
+    {'field': 'age', 'value': 50, 'evidence': '28岁'},
+    {'field': 'unknown', 'value': 'test', 'evidence': '28岁'},
+    {'field': 'days', 'value': True, 'evidence': '28岁'},
+])
+def test_coach_invalid_extraction_does_not_save_anything(monkeypatch, update):
+    async def fake(*args):
+        return {'reply': '回复', 'profile_updates': [update]}, 'test-model'
+    monkeypatch.setattr(module.coach, 'respond', fake)
+    result = client.post('/api/coach/messages', json={'request_id': 'invalid-0001', 'message': '我28岁'})
+    assert result.status_code == 502
+    assert client.get('/api/coach/profile').json()['facts'] == {}
+    assert client.get('/api/coach/messages').json()['turns'] == []
+
+def test_coach_does_not_overwrite_profile_changed_while_waiting(monkeypatch):
+    client.put('/api/profile', json=PROFILE)
+    async def fake(*args):
+        module.put_profile(module.Profile(**{**PROFILE, 'weight_kg': 73}))
+        return {'reply': '回复', 'profile_updates': [
+            {'field': 'weight_kg', 'value': 72, 'evidence': '72kg'}]}, 'test-model'
+    monkeypatch.setattr(module.coach, 'respond', fake)
+    assert client.post('/api/coach/messages', json={
+        'request_id': 'conflict-0001', 'message': '我72kg'}).status_code == 409
+    assert client.get('/api/profile').json()['weight_kg'] == 73
+    assert client.get('/api/coach/messages').json()['turns'] == []
+
+def test_plan_uses_coach_preferences_and_rejects_changed_preferences(monkeypatch):
+    client.put('/api/profile', json=PROFILE)
+    client.patch('/api/coach/profile', json={'equipment': '健身房器械', 'schedule': '晚上训练'})
+    async def fake(profile, *args):
+        assert profile['equipment'] == '健身房器械' and profile['schedule'] == '晚上训练'
+        return ai_result(), 'test-model'
+    monkeypatch.setattr(module.ai_planner, 'generate', fake)
+    response = client.post('/api/plans/generate')
+    assert response.status_code == 200
+    draft = response.json()
+    client.patch('/api/coach/profile', json={'equipment': '只有哑铃'})
+    assert client.post('/api/plans', json={
+        k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 409
+
+def test_coach_provider_sends_prompt_context_and_explicit_errors(monkeypatch):
+    import httpx
+    config = {'AI_API_KEY': 'test-secret', 'AI_BASE_URL': 'https://model.example/v1', 'AI_MODEL': 'test-model'}
+    monkeypatch.setattr(module.ai_planner, 'settings', lambda: config)
+    def handler(request):
+        body = __import__('json').loads(request.content)
+        assert request.headers['Authorization'] == 'Bearer test-secret'
+        assert 'AI 健身教练' in body['messages'][0]['content']
+        assert body['messages'][-1] == {'role': 'user', 'content': '如何找到深蹲动作库？'}
+        assert '蹲：髋膝屈伸' in body['messages'][1]['content']
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content':
+            __import__('json').dumps({'reply': '打开侧边栏 AI 陪训中的动作库。', 'profile_updates': []})}}]})
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(module.ai_planner.httpx, 'AsyncClient',
+                        lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = client.post('/api/coach/messages', json={
+        'request_id': 'provider-0001', 'message': '如何找到深蹲动作库？'})
+    assert result.status_code == 200 and result.json()['profile_changes'] == []
+    assert 'test-secret' not in result.text
+    assert client.get('/api/coach/profile').json()['facts'] == {}
+    assert 'AI 健身教练' in client.get('/api/coach/prompt').json()['prompt']
+    monkeypatch.setattr(module.ai_planner, 'settings', lambda: {k: '' for k in config})
+    assert not client.get('/api/coach/status').json()['configured']
+    assert client.post('/api/coach/messages', json={
+        'request_id': 'provider-0002', 'message': '你好'}).status_code == 503
+    assert len(client.get('/api/coach/messages').json()['turns']) == 1
+
 def test_library_search_categories_and_sources():
     assert len(client.get('/api/catalog').json()['exercises']) == 3
     assert len(client.get('/api/catalog?extended=true').json()['exercises']) == 38

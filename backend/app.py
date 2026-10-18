@@ -14,11 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Literal
 try:
-    from . import ai_planner, library, movement_analysis
+    from . import ai_planner, library, movement_analysis, coach
 except ImportError:
     import ai_planner
     import library
     import movement_analysis
+    import coach
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('FIT_DATA_DIR', ROOT / 'data'))
@@ -51,7 +52,7 @@ def records(kind):
 
 app = FastAPI(title='LiftLab API', version='0.1.0')
 app.add_middleware(CORSMiddleware, allow_origin_regex=r'https?://(localhost|127\.0\.0\.1)(:\d+)?',
-                   allow_methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
+                   allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Content-Type'])
 
 library.initialize(connection)
 app.include_router(library.router(connection))
@@ -227,12 +228,16 @@ def save_user_plan(plan: UserPlan):
             raise HTTPException(422, 'AI草稿不存在，请重新生成')
         if draft['profile_snapshot'] != get_profile() or draft['rm_snapshot'] != get_rm():
             raise HTTPException(409, '画像或RM已变化，请重新生成AI计划')
+        if 'coach_profile_snapshot' in draft:
+            with connection() as db:
+                if draft['coach_profile_snapshot'] != coach.state(db)['facts']:
+                    raise HTTPException(409, '画像偏好已变化，请重新生成AI计划')
     validate_plan_exercises(payload)
     names = {e['id']: e['name'] for e in exercise_entries()}
     for day in payload['days']:
         for exercise in day['exercises']:
             exercise['name'] = names[exercise['exercise_id']]
-    metadata = {k: draft[k] for k in ('rationale', 'warmup', 'recovery', 'progression', 'model', 'profile_snapshot', 'rm_snapshot')} if draft else {}
+    metadata = {k: draft[k] for k in ('rationale', 'warmup', 'recovery', 'progression', 'model', 'profile_snapshot', 'rm_snapshot', 'coach_profile_snapshot') if k in draft} if draft else {}
     saved = save('plan', {**payload, **metadata, 'generation_id': generation_id,
         'created_on': nutrition_today().isoformat(), 'source': 'ai' if draft else 'user',
         'note': 'AI生成、用户确认的训练计划；重量待确认的动作需先补充负荷。' if draft else '用户调整的训练计划；RM评估仅提供参考。'})
@@ -255,6 +260,8 @@ async def generate_plan():
     if profile['restrictions'].strip():
         raise HTTPException(422, '画像包含伤病或训练限制。请先确认适合的训练范围后再生成计划。')
     rm_snapshot = get_rm()
+    with connection() as db:
+        coach_snapshot = coach.state(db)['facts']
     baselines = {r['exercise_id']: r for r in rm_snapshot if r['confirmed_maximum']
         and r['reference_1rm_kg'] and (nutrition_today() - date.fromisoformat(r['measured_on'])).days <= 90}
     available = [e for e in exercise_entries() if e['type'] == 'weighted']
@@ -263,7 +270,7 @@ async def generate_plan():
     schema = AIPlan.model_json_schema()
     schema['$defs']['PlanExercise']['properties']['exercise_id']['enum'] = [e['id'] for e in available]
     schema['x-exercise-catalog'] = [{k: e[k] for k in ('id', 'name', 'category', 'equipment', 'weight_basis')} for e in available]
-    raw, model = await ai_planner.generate(profile, baselines, schema)
+    raw, model = await ai_planner.generate({**profile, **coach_snapshot}, baselines, schema)
     try:
         generated = AIPlan.model_validate(raw).model_dump()
         if len(generated['days']) != profile['days'] or len({d['name'] for d in generated['days']}) != profile['days']:
@@ -284,8 +291,11 @@ async def generate_plan():
         raise HTTPException(502, 'AI计划不符合动作、训练日或负荷要求，请重新生成') from None
     if get_profile() != profile or get_rm() != rm_snapshot:
         raise HTTPException(409, '生成过程中画像或RM已变化，请重新生成')
+    with connection() as db:
+        if coach.state(db)['facts'] != coach_snapshot:
+            raise HTTPException(409, '生成过程中画像偏好已变化，请重新生成')
     draft = save('plan_draft', {**generated, 'model': model, 'profile_snapshot': profile,
-        'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
+        'coach_profile_snapshot': coach_snapshot, 'rm_snapshot': rm_snapshot, 'created_on': nutrition_today().isoformat()})
     return {**draft, 'generation_id': draft['id'], 'assessment': assess_plan(draft)}
 
 def nutrition_target(profile):
@@ -367,6 +377,25 @@ def add_training(training: Training):
 @app.get('/api/training')
 def get_training():
     return records('training')
+
+def coach_context(message):
+    exercises = exercise_entries()
+    related = [e for e in exercises if any(term and term in message for term in
+               [e['name'], *e.get('aliases', [])])]
+    return {
+        'today': nutrition_today().isoformat(),
+        'nutrition': nutrition_summary(), 'rm': get_rm(),
+        'current_plan': get_plans()[:1], 'recent_training': get_training()[:5],
+        'exercise_catalog': [{k: e.get(k) for k in
+            ('id', 'name', 'type', 'movement_pattern', 'body_regions', 'weight_basis', 'realtime_supported')}
+            for e in exercises],
+        'related_exercise_details': [{k: e.get(k) for k in
+            ('id', 'name', 'joint_actions', 'primary_muscles', 'secondary_muscles', 'technique', 'content_version')}
+            for e in related[:3]],
+        'video_evidence_available': False,
+    }
+
+app.include_router(coach.router(connection, Profile, coach_context))
 
 @app.post('/api/media')
 async def upload_media(kind: Literal['meal', 'video'] = Form(...), exercise_id: str = Form(''), file: UploadFile = File(...)):
