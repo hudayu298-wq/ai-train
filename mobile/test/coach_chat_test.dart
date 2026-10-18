@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liftlab/app.dart';
 import 'package:liftlab/coach_chat.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('chat saves a turn and displays extracted evidence', (
@@ -107,6 +109,9 @@ void main() {
   testWidgets('home is chat and drawer opens each fitness page', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     await http.runWithClient(
       () async {
         await tester.pumpWidget(const LiftLab());
@@ -114,7 +119,7 @@ void main() {
         expect(find.byType(CoachChat), findsOneWidget);
         expect(find.byType(NavigationBar), findsNothing);
         expect(find.text('我的用户画像'), findsNothing);
-        for (final item in ['饮食', '训练计划', 'AI 陪训', '我', 'AI 私教']) {
+        for (final item in ['饮食', '训练计划', 'AI 陪训', '我', '私教提醒', 'AI 私教']) {
           await tester.tap(find.byTooltip('Open navigation menu'));
           await tester.pumpAndSettle();
           await tester.tap(find.widgetWithText(ListTile, item));
@@ -173,5 +178,6 @@ void main() {
         );
       }),
     );
+    debugDefaultTargetPlatformOverride = null;
   });
 }

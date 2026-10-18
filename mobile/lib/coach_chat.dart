@@ -2,16 +2,20 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'coach_avatar.dart';
+
 class CoachChat extends StatefulWidget {
   const CoachChat({
     super.key,
     required this.request,
     required this.onProfileChanged,
     this.refreshToken = 0,
+    this.coachName = '林教练',
   });
   final Future<dynamic> Function(String, String, Object?) request;
   final Future<void> Function() onProfileChanged;
   final int refreshToken;
+  final String coachName;
 
   static String displayValue(dynamic value) => switch (value) {
     'male' => '男性',
@@ -148,12 +152,23 @@ class _CoachChatState extends State<CoachChat> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            user ? '你' : 'AI 私教',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: user ? Colors.white70 : const Color(0xff537164),
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!user) ...[
+                const CoachAvatar(size: 36),
+                const SizedBox(width: 10),
+              ],
+              Flexible(
+                child: Text(
+                  user ? '你' : '${widget.coachName} · AI 私教',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: user ? Colors.white70 : const Color(0xff537164),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           SelectableText(
@@ -207,7 +222,7 @@ class _CoachChatState extends State<CoachChat> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     bubble(
-                      '你好，我是你的 AI 私教。你可以聊训练目标、饮食或训练中的困惑。\n先告诉我：你目前最想达成什么目标？',
+                      '你好，我是你的 AI 私教${widget.coachName}。你可以聊训练目标、饮食或训练中的困惑。\n先告诉我：你目前最想达成什么目标？',
                       footer: const Text(
                         '你明确提供的画像信息会自动记录；对话及相关健身资料会发送到已配置的 AI 服务。',
                         style: TextStyle(
