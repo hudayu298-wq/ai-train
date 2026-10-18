@@ -11,8 +11,8 @@ if ($Foreground) {
 $fitnessListener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
 if ($fitnessListener) {
     $fitnessHealth = Invoke-RestMethod 'http://127.0.0.1:8000/api/health' -TimeoutSec 5
-    if ($fitnessHealth.mode -ne 'local_single_user') {
-        throw '8000 端口被其他服务占用。'
+    if ($fitnessHealth.mode -ne 'multi_user') {
+        throw '8000 端口仍运行旧版后端或其他服务。请停止旧版 LiftLab 后端后重新启动。'
     }
 } else {
     $fitnessLogs = Join-Path $PSScriptRoot 'data\logs'
@@ -30,4 +30,4 @@ if ($fitnessListener) {
 }
 Write-Output 'LiftLab 后台服务已运行。'
 Write-Output 'Flutter 预览：http://127.0.0.1:8000/app/'
-Write-Output '轻量预览：http://127.0.0.1:8000/'
+Write-Output '入口（跳转登录页）：http://127.0.0.1:8000/'

@@ -1,0 +1,6 @@
+# Deploy after api.lianbanfit.top resolves to this server and 80/443 are reachable.
+# This file alone does not enable HTTPS; Caddy must be installed and configured.
+api.lianbanfit.top {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+}
