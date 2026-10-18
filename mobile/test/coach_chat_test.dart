@@ -8,6 +8,8 @@ import 'package:http/testing.dart';
 import 'package:liftlab/app.dart';
 import 'package:liftlab/coach_chat.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:liftlab/auth/session.dart';
 
 void main() {
   testWidgets('chat saves a turn and displays extracted evidence', (
@@ -118,6 +120,14 @@ void main() {
     final sent = <Map<String, dynamic>>[];
     await http.runWithClient(
       () async {
+        FlutterSecureStorage.setMockInitialValues({});
+        authSession = AuthSession();
+        await authSession.accept({
+          'access_token': 'test-access',
+          'refresh_token': 'test-refresh',
+          'expires_in': 900,
+          'user': {'id': 'test-user', 'display_name': '测试用户'},
+        });
         await tester.pumpWidget(const LiftLab());
         await tester.pumpAndSettle();
         expect(find.byType(CoachChat), findsOneWidget);
@@ -160,6 +170,8 @@ void main() {
       () => MockClient((request) async {
         dynamic body;
         switch (request.url.path) {
+          case '/api/coach/reminders':
+            body = {};
           case '/api/catalog':
             body = {
               'foods': [

@@ -356,7 +356,7 @@ class _ReminderPageState extends State<ReminderPage> {
         upcoming(),
         Text(
           widget.service.native
-              ? '请允许通知。若锁屏后收不到提醒，检查手机对 LiftLab 的后台运行与省电限制；系统可能延后通知。'
+              ? '请允许通知。若锁屏后收不到提醒，检查手机对练伴的后台运行与省电限制；系统可能延后通知。'
               : '网页提醒需要保持页面在前台。关闭页面后不会发送系统通知。',
         ),
         const SizedBox(height: 18),

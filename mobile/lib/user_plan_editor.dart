@@ -6,7 +6,9 @@ class UserPlanEditor extends StatefulWidget {
     required this.post,
     required this.onSaved,
     required this.exercises,
-    required this.rmRecords,
+    this.rmRecords = const [],
+    this.compact = false,
+    this.autoGenerate = false,
     this.exerciseDetails = const {},
     this.currentPlan,
   });
@@ -15,6 +17,7 @@ class UserPlanEditor extends StatefulWidget {
   final Map<String, String> exercises;
   final Map<String, Map<String, dynamic>> exerciseDetails;
   final List<dynamic> rmRecords;
+  final bool compact, autoGenerate;
   final Map<String, dynamic>? currentPlan;
   @override
   State<UserPlanEditor> createState() => _UserPlanEditorState();
@@ -27,36 +30,33 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   final sets = TextEditingController();
   final reps = TextEditingController();
   final rest = TextEditingController();
-  final rmWeight = TextEditingController();
-  final rmReps = TextEditingController(text: '1');
-  final rmDate = TextEditingController(
-    text: DateTime.now().toIso8601String().split('T').first,
-  );
-  String exercise = 'bench', rmExercise = 'bench';
+  String exercise = 'bench';
   String movementCategory = '', bodyRegion = '';
-  bool confirmed = false, busy = false;
+  bool busy = false, editingCurrent = false;
   int? editing;
   String? message;
   final List<Map<String, dynamic>> entries = [];
   Map<String, dynamic>? assessment;
   Map<String, dynamic>? aiDraft;
-  String? generationId;
+  String? generationId, basePlanId;
 
   @override
   void initState() {
     super.initState();
     exercise = widget.exercises.keys.firstOrNull ?? '';
-    rmExercise = exercise;
     final plan = widget.currentPlan;
     if (plan != null) {
-      generationId = plan['generation_id'];
-      if (plan['source'] == 'ai') aiDraft = plan;
+      basePlanId = plan['id'];
+      if (!widget.compact && plan['source'] == 'ai') aiDraft = plan;
       title.text = plan['name'];
       for (final d in plan['days']) {
         for (final e in d['exercises']) {
           entries.add({'day': d['name'], ...Map<String, dynamic>.from(e)});
         }
       }
+    }
+    if (widget.autoGenerate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => generate());
     }
   }
 
@@ -122,24 +122,11 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     if (!allCategories.contains(movementCategory)) movementCategory = '';
     if (!bodyRegions.contains(bodyRegion)) bodyRegion = '';
     normalizeExerciseSelection();
-    if (!widget.exercises.containsKey(rmExercise)) {
-      rmExercise = widget.exercises.keys.firstOrNull ?? '';
-    }
   }
 
   @override
   void dispose() {
-    for (final c in [
-      title,
-      day,
-      weight,
-      sets,
-      reps,
-      rest,
-      rmWeight,
-      rmReps,
-      rmDate,
-    ]) {
+    for (final c in [title, day, weight, sets, reps, rest]) {
       c.dispose();
     }
     super.dispose();
@@ -236,8 +223,19 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     return {
       'name': title.text.trim(),
       if (generationId != null) 'generation_id': generationId,
+      if (generationId == null && basePlanId != null)
+        'base_plan_id': basePlanId,
       'days': [
-        for (final d in groups.entries) {'name': d.key, 'exercises': d.value},
+        for (final d in groups.entries)
+          {
+            'name': d.key,
+            'exercises': d.value,
+            for (final original
+                in (aiDraft ?? widget.currentPlan)?['days'] ?? [])
+              if (original['name'] == d.key)
+                for (final key in ['weekday', 'start_time', 'duration_minutes'])
+                  if (original[key] != null) key: original[key],
+          },
       ],
     };
   }
@@ -284,6 +282,174 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     }
   }
 
+  Future<void> generate() => run(() async {
+    final result = Map<String, dynamic>.from(
+      await widget.post('/plans/generate', {}),
+    );
+    if (!mounted) return;
+    setState(() {
+      aiDraft = result;
+      generationId = result['generation_id'];
+      basePlanId = null;
+      title.text = result['name'];
+      entries.clear();
+      for (final d in result['days']) {
+        for (final e in d['exercises']) {
+          entries.add({'day': d['name'], ...Map<String, dynamic>.from(e)});
+        }
+      }
+      editing = null;
+      assessment = Map<String, dynamic>.from(result['assessment']);
+      message = 'AI草稿已生成，请检查下方动作与负荷，确认后保存';
+    });
+  });
+
+  Widget confirmButton() => FilledButton(
+    onPressed: busy
+        ? null
+        : () => run(() async {
+            final result = await widget.post('/plans', payload());
+            await widget.onSaved();
+            if (mounted) {
+              setState(() {
+                assessment = Map<String, dynamic>.from(result['assessment']);
+                message = '计划已确认保存';
+              });
+            }
+          }),
+    child: Text(
+      widget.compact ? (aiDraft == null ? '保存修改' : '确认使用这个计划') : '保存我的计划并评估',
+    ),
+  );
+
+  List<Widget> editorControls() => [
+    const Divider(height: 28),
+    Text('检查与调整计划草稿', style: Theme.of(context).textTheme.titleLarge),
+    const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
+    field('计划名称', title, text: true),
+    field('训练日名称（如周一）', day, text: true),
+    selector(
+      '关节动作分类',
+      movementCategory,
+      (v) => filterExercises(category: v),
+      options: {
+        '': '全部关节动作',
+        for (final category in movementCategories) category: category,
+      },
+    ),
+    selector(
+      '训练部位',
+      bodyRegion,
+      (v) => filterExercises(region: v),
+      options: {'': '全部训练部位', for (final region in bodyRegions) region: region},
+    ),
+    selector('计划动作', exercise, (v) => exercise = v, options: filteredExercises),
+    if (movementCategory.isNotEmpty || bodyRegion.isNotEmpty)
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: busy
+              ? null
+              : () => setState(() {
+                  movementCategory = '';
+                  bodyRegion = '';
+                  normalizeExerciseSelection();
+                }),
+          icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+          label: const Text('清除动作筛选'),
+        ),
+      ),
+    Text(
+      filteredExercises.isEmpty
+          ? '当前分类与部位下没有可用动作，请调整筛选。'
+          : '可选 ${filteredExercises.length} 个负重动作。',
+    ),
+    if (filteredExercises.containsKey(exercise) &&
+        widget.exerciseDetails.containsKey(exercise))
+      Text(
+        '${movementFor(exercise)} · 训练部位：${regionsFor(exercise).join('、')}\n${widget.exerciseDetails[exercise]?['weight_basis'] ?? ''}',
+      ),
+    field('计划重量 / kg', weight),
+    field('组数', sets),
+    field('每组次数', reps),
+    field('组间休息 / 秒', rest),
+    OutlinedButton(
+      onPressed: busy || !filteredExercises.containsKey(exercise)
+          ? null
+          : addEntry,
+      child: Text(editing == null ? '添加到计划' : '更新该动作'),
+    ),
+    for (int i = 0; i < entries.length; i++)
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          '${entries[i]['day']} · ${widget.exercises[entries[i]['exercise_id']]}',
+        ),
+        subtitle: Text(
+          '${entries[i]['weight_kg'] == null ? '重量待确认' : '${entries[i]['weight_kg']}kg'} · ${entries[i]['sets']} × ${entries[i]['reps']} · 休息${entries[i]['rest_seconds']}秒',
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: busy
+                  ? null
+                  : () => setState(() {
+                      final e = entries[i];
+                      editing = i;
+                      day.text = e['day'];
+                      exercise = e['exercise_id'];
+                      movementCategory = '';
+                      bodyRegion = '';
+                      weight.text = e['weight_kg'] == null
+                          ? ''
+                          : '${e['weight_kg']}';
+                      sets.text = '${e['sets']}';
+                      reps.text = '${e['reps']}';
+                      rest.text = '${e['rest_seconds']}';
+                    }),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: busy
+                  ? null
+                  : () => setState(() {
+                      entries.removeAt(i);
+                      editing = null;
+                      assessment = null;
+                    }),
+            ),
+          ],
+        ),
+      ),
+    OutlinedButton(
+      onPressed: busy
+          ? null
+          : () => run(() async {
+              final result = await widget.post('/plans/assess', payload());
+              if (mounted) {
+                setState(() => assessment = Map<String, dynamic>.from(result));
+              }
+            }),
+      child: const Text('仅评估草稿'),
+    ),
+    if (!widget.compact) confirmButton(),
+    if (assessment != null) ...[
+      Text(assessment!['note']),
+      for (final item in assessment!['items'])
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            '${item['day']} · ${widget.exercises[item['exercise_id']]}',
+          ),
+          subtitle: Text(
+            '${item['load_percent'] == null ? '暂无可用RM评估' : '相对负荷 ${item['load_percent']}% · 1RM参考 ${item['reference_1rm_kg']}kg'}\n${item['message']}',
+          ),
+        ),
+    ],
+  ];
+
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -293,39 +459,13 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
         children: [
           Text('AI 制定训练计划', style: Theme.of(context).textTheme.titleLarge),
           const Text(
-            '根据已保存的画像、目标和RM生成一周草稿。点击生成会将画像及RM发送到已配置的模型服务，并替换当前未保存草稿；已保存的计划保留。',
+            '根据每周训练日、可用时间、目标和力量水平生成整体周期计划。点击生成会将画像及RM发送到已配置的模型服务，并替换当前未保存草稿；已保存的计划保留。',
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
             icon: const Icon(Icons.auto_awesome),
             label: Text(busy ? '处理中…' : '根据画像生成 AI 计划'),
-            onPressed: busy
-                ? null
-                : () => run(() async {
-                    final result = Map<String, dynamic>.from(
-                      await widget.post('/plans/generate', {}),
-                    );
-                    if (!mounted) return;
-                    setState(() {
-                      aiDraft = result;
-                      generationId = result['generation_id'];
-                      title.text = result['name'];
-                      entries.clear();
-                      for (final d in result['days']) {
-                        for (final e in d['exercises']) {
-                          entries.add({
-                            'day': d['name'],
-                            ...Map<String, dynamic>.from(e),
-                          });
-                        }
-                      }
-                      editing = null;
-                      assessment = Map<String, dynamic>.from(
-                        result['assessment'],
-                      );
-                      message = 'AI草稿已生成，请检查下方动作与负荷，确认后保存';
-                    });
-                  }),
+            onPressed: busy ? null : generate,
           ),
           if (busy) const LinearProgressIndicator(),
           if (message != null)
@@ -335,216 +475,43 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
             ),
           if (aiDraft != null) ...[
             Text('制定理由：${aiDraft!['rationale']}'),
+            if (aiDraft!['cycle_weeks'] != null)
+              Text('${aiDraft!['cycle_weeks']}周整体周期'),
+            for (final week in aiDraft!['weeks'] ?? []) Text('$week'),
+            for (final warning in aiDraft!['risk_warnings'] ?? [])
+              Text('风险提示：$warning'),
             Text('热身：${aiDraft!['warmup']}'),
             Text('恢复：${aiDraft!['recovery']}'),
             Text('调整建议：${aiDraft!['progression']}'),
           ],
-          const Divider(height: 28),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('我的 RM 数据'),
-            subtitle: Text('${widget.rmRecords.length} 项记录 · 用于负荷评估'),
-            children: [
-              const Text(
-                '填写已有数据：例如80kg最多完成5次即5RM。普通训练组不等于RM；不需要为使用App专门尝试极限重量。',
-              ),
-              selector('RM 对应动作变式', rmExercise, (v) => rmExercise = v),
-              field('RM 重量 / kg（含杠铃）', rmWeight),
-              field('最多完成次数 / 1–10', rmReps),
-              field('数据日期 / YYYY-MM-DD', rmDate, text: true),
-              CheckboxListTile(
-                value: confirmed,
-                title: const Text('确认是该重量的最大完成次数'),
-                onChanged: busy
-                    ? null
-                    : (v) => setState(() => confirmed = v ?? false),
-              ),
-              FilledButton(
-                onPressed: busy
-                    ? null
-                    : () => run(() async {
-                        await widget.post('/rm', {
-                          'exercise_id': rmExercise,
-                          'weight_kg': numeric(rmWeight),
-                          'reps': integer(rmReps),
-                          'measured_on': rmDate.text.trim(),
-                          'confirmed_maximum': confirmed,
-                        });
-                        await widget.onSaved();
-                        if (mounted) {
-                          setState(() {
-                            assessment = null;
-                            message = 'RM已保存，请重新评估计划';
-                          });
-                        }
-                      }),
-                child: const Text('保存 RM'),
-              ),
-              for (final r in widget.rmRecords)
+          if (widget.currentPlan != null && widget.compact && aiDraft == null)
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => setState(() => editingCurrent = !editingCurrent),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('修改当前计划'),
+            ),
+          if (!widget.compact || aiDraft != null || editingCurrent) ...[
+            if (widget.compact) ...[
+              Text(title.text, style: Theme.of(context).textTheme.titleLarge),
+              for (final e in entries)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    '${widget.exercises[r['exercise_id']]} · ${r['weight_kg']}kg × ${r['reps']}RM',
+                    '${e['day']} · ${widget.exercises[e['exercise_id']] ?? e['exercise_id']}',
                   ),
                   subtitle: Text(
-                    '${r['measured_on']} · ${r['reference_1rm_kg'] == null ? '未确认最大次数，暂不参与评估' : '${r['reps'] == 1 ? '用户提供1RM' : '估算1RM'} ${r['reference_1rm_kg']}kg'}',
+                    '${e['weight_kg'] ?? '待确认'} kg · ${e['sets']}组 × ${e['reps']}次 · 休息${e['rest_seconds']}秒',
                   ),
                 ),
-            ],
-          ),
-          const Divider(height: 28),
-          Text('检查与调整计划草稿', style: Theme.of(context).textTheme.titleLarge),
-          const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
-          field('计划名称', title, text: true),
-          field('训练日名称（如周一）', day, text: true),
-          selector(
-            '关节动作分类',
-            movementCategory,
-            (v) => filterExercises(category: v),
-            options: {
-              '': '全部关节动作',
-              for (final category in movementCategories) category: category,
-            },
-          ),
-          selector(
-            '训练部位',
-            bodyRegion,
-            (v) => filterExercises(region: v),
-            options: {
-              '': '全部训练部位',
-              for (final region in bodyRegions) region: region,
-            },
-          ),
-          selector(
-            '计划动作',
-            exercise,
-            (v) => exercise = v,
-            options: filteredExercises,
-          ),
-          if (movementCategory.isNotEmpty || bodyRegion.isNotEmpty)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: busy
-                    ? null
-                    : () => setState(() {
-                        movementCategory = '';
-                        bodyRegion = '';
-                        normalizeExerciseSelection();
-                      }),
-                icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
-                label: const Text('清除动作筛选'),
+              confirmButton(),
+              ExpansionTile(
+                title: const Text('调整动作与负荷'),
+                children: editorControls(),
               ),
-            ),
-          Text(
-            filteredExercises.isEmpty
-                ? '当前分类与部位下没有可用动作，请调整筛选。'
-                : '可选 ${filteredExercises.length} 个负重动作。',
-          ),
-          if (filteredExercises.containsKey(exercise) &&
-              widget.exerciseDetails.containsKey(exercise))
-            Text(
-              '${movementFor(exercise)} · 训练部位：${regionsFor(exercise).join('、')}\n${widget.exerciseDetails[exercise]?['weight_basis'] ?? ''}',
-            ),
-          field('计划重量 / kg', weight),
-          field('组数', sets),
-          field('每组次数', reps),
-          field('组间休息 / 秒', rest),
-          OutlinedButton(
-            onPressed: busy || !filteredExercises.containsKey(exercise)
-                ? null
-                : addEntry,
-            child: Text(editing == null ? '添加到计划' : '更新该动作'),
-          ),
-          for (int i = 0; i < entries.length; i++)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                '${entries[i]['day']} · ${widget.exercises[entries[i]['exercise_id']]}',
-              ),
-              subtitle: Text(
-                '${entries[i]['weight_kg'] == null ? '重量待确认' : '${entries[i]['weight_kg']}kg'} · ${entries[i]['sets']} × ${entries[i]['reps']} · 休息${entries[i]['rest_seconds']}秒',
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            final e = entries[i];
-                            editing = i;
-                            day.text = e['day'];
-                            exercise = e['exercise_id'];
-                            movementCategory = '';
-                            bodyRegion = '';
-                            weight.text = e['weight_kg'] == null
-                                ? ''
-                                : '${e['weight_kg']}';
-                            sets.text = '${e['sets']}';
-                            reps.text = '${e['reps']}';
-                            rest.text = '${e['rest_seconds']}';
-                          }),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            entries.removeAt(i);
-                            editing = null;
-                            assessment = null;
-                          }),
-                  ),
-                ],
-              ),
-            ),
-          OutlinedButton(
-            onPressed: busy
-                ? null
-                : () => run(() async {
-                    final result = await widget.post(
-                      '/plans/assess',
-                      payload(),
-                    );
-                    if (mounted) {
-                      setState(
-                        () => assessment = Map<String, dynamic>.from(result),
-                      );
-                    }
-                  }),
-            child: const Text('仅评估草稿'),
-          ),
-          FilledButton(
-            onPressed: busy
-                ? null
-                : () => run(() async {
-                    final result = await widget.post('/plans', payload());
-                    await widget.onSaved();
-                    if (mounted) {
-                      setState(() {
-                        assessment = Map<String, dynamic>.from(
-                          result['assessment'],
-                        );
-                        message = '计划已确认保存';
-                      });
-                    }
-                  }),
-            child: const Text('保存我的计划并评估'),
-          ),
-          if (assessment != null) ...[
-            Text(assessment!['note']),
-            for (final item in assessment!['items'])
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  '${item['day']} · ${widget.exercises[item['exercise_id']]}',
-                ),
-                subtitle: Text(
-                  '${item['load_percent'] == null ? '暂无可用RM评估' : '相对负荷 ${item['load_percent']}% · 1RM参考 ${item['reference_1rm_kg']}kg'}\n${item['message']}',
-                ),
-              ),
+            ] else
+              ...editorControls(),
           ],
         ],
       ),

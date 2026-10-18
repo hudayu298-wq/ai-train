@@ -81,6 +81,7 @@ void main() {
       MaterialApp(
         home: LibraryPage(
           kind: 'foods',
+          canManage: true,
           onChanged: () async {},
           request: (path, method, body) async {
             paths.add(path);

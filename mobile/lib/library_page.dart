@@ -13,6 +13,7 @@ class LibraryPage extends StatefulWidget {
     required this.onChanged,
     this.onSelect,
     this.assetBase = 'http://127.0.0.1:8000',
+    this.canManage = false,
     required this.kind,
   }) : assert(kind == 'foods' || kind == 'exercises');
   final Future<dynamic> Function(String, String, Object?) request;
@@ -20,6 +21,7 @@ class LibraryPage extends StatefulWidget {
   final void Function(String, Map<String, dynamic>)? onSelect;
   final String assetBase;
   final String kind;
+  final bool canManage;
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
@@ -552,15 +554,17 @@ class _LibraryPageState extends State<LibraryPage> {
               Wrap(
                 spacing: 8,
                 children: [
-                  FilledButton.icon(
-                    onPressed: busy ? null : () => edit(),
-                    icon: const Icon(Icons.add),
-                    label: const Text('新增'),
-                  ),
-                  TextButton(
-                    onPressed: busy ? null : importJson,
-                    child: const Text('导入 JSON'),
-                  ),
+                  if (widget.canManage)
+                    FilledButton.icon(
+                      onPressed: busy ? null : () => edit(),
+                      icon: const Icon(Icons.add),
+                      label: const Text('新增'),
+                    ),
+                  if (widget.canManage)
+                    TextButton(
+                      onPressed: busy ? null : importJson,
+                      child: const Text('导入 JSON'),
+                    ),
                   TextButton(
                     onPressed: busy
                         ? null
@@ -708,14 +712,18 @@ class _LibraryPageState extends State<LibraryPage> {
                                           kind == 'foods' ? '用于饮食记录' : '用于训练记录',
                                         ),
                                       ),
-                                    TextButton(
-                                      onPressed: busy ? null : () => edit(e),
-                                      child: const Text('编辑'),
-                                    ),
-                                    TextButton(
-                                      onPressed: busy ? null : () => archive(e),
-                                      child: const Text('停用'),
-                                    ),
+                                    if (widget.canManage)
+                                      TextButton(
+                                        onPressed: busy ? null : () => edit(e),
+                                        child: const Text('编辑'),
+                                      ),
+                                    if (widget.canManage)
+                                      TextButton(
+                                        onPressed: busy
+                                            ? null
+                                            : () => archive(e),
+                                        child: const Text('停用'),
+                                      ),
                                   ],
                                 ),
                               ],

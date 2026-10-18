@@ -9,15 +9,19 @@ import 'package:timezone/data/latest.dart' as tzdata;
 import 'reminder_settings.dart';
 
 class CoachReminders extends ChangeNotifier {
-  CoachReminders({FlutterLocalNotificationsPlugin? notifications, bool? native})
-    : notifications = notifications ?? FlutterLocalNotificationsPlugin(),
-      native =
-          native ??
-          (!kIsWeb &&
-              (defaultTargetPlatform == TargetPlatform.android ||
-                  defaultTargetPlatform == TargetPlatform.iOS));
+  CoachReminders({
+    FlutterLocalNotificationsPlugin? notifications,
+    bool? native,
+    this.ownerId,
+  }) : notifications = notifications ?? FlutterLocalNotificationsPlugin(),
+       native =
+           native ??
+           (!kIsWeb &&
+               (defaultTargetPlatform == TargetPlatform.android ||
+                   defaultTargetPlatform == TargetPlatform.iOS));
   final FlutterLocalNotificationsPlugin notifications;
   final bool native;
+  final String? ownerId;
   ReminderSettings settings = ReminderSettings();
   SharedPreferences? preferences;
   String goal = '', status = '提醒设置加载中…';
@@ -30,7 +34,39 @@ class CoachReminders extends ChangeNotifier {
   void Function(CoachReminder)? onForegroundReminder;
   void Function(String)? onOpen;
 
-  static const storageKey = 'liftlab.coach.reminders.v1';
+  String get storageKey => ownerId == null
+      ? 'liftlab.coach.reminders.v1'
+      : 'liftlab.coach.reminders.v2.$ownerId';
+
+  static Future<void> clearLocalSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key
+        in prefs
+            .getKeys()
+            .where((key) => key.startsWith('liftlab.coach.reminders.'))
+            .toList()) {
+      await prefs.remove(key);
+    }
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      final plugin = FlutterLocalNotificationsPlugin();
+      await plugin.initialize(
+        settings: const InitializationSettings(
+          android: AndroidInitializationSettings('ic_coach_notification'),
+          iOS: DarwinInitializationSettings(
+            requestAlertPermission: false,
+            requestBadgePermission: false,
+            requestSoundPermission: false,
+          ),
+        ),
+      );
+      for (final id in ownedIds) {
+        await plugin.cancel(id: id);
+      }
+    }
+  }
+
   static final ownedIds = [
     for (int day = 1; day <= 7; day++) ...[1100 + day, 1200 + day],
     1301,
