@@ -10,13 +10,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 try:
-    from . import ai_planner, coaches
+    from . import ai_planner, coaches, workouts
 except ImportError:
     import ai_planner
     import coaches
+    import workouts
 
 PROMPT = (Path(__file__).parent / 'prompts' / 'fitness_coach.md').read_text(encoding='utf-8')
-PROMPT_VERSION = 'coach-2.1'
+PROMPT_VERSION = 'coach-2.2'
 LABELS = {
     'age': '年龄', 'height_cm': '身高 / cm', 'weight_kg': '体重 / kg',
     'sex': '代谢估算性别', 'goal': '训练目标', 'experience': '训练经验',
@@ -81,7 +82,8 @@ def state(db):
     facts = {**stored.get('facts', {}), **{k: v for k, v in full.items() if k in CORE}}
     missing = sorted(REQUIRED - facts.keys())
     return {'facts': facts, 'missing_fields': missing, 'labels': LABELS,
-            'complete': not missing, 'updated_at': stored.get('updated_at')}
+            'complete': not missing, 'updated_at': stored.get('updated_at'),
+            'training_memory': workouts.memory(db)}
 
 
 def turns(db, limit=40):

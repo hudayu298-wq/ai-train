@@ -17,6 +17,7 @@ import 'reminders/reminder_settings.dart';
 import 'coaches/coach_picker.dart';
 import 'coaches/coach_persona.dart';
 import 'ui_theme.dart';
+import 'workout_log.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -47,6 +48,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Map<String, dynamic>? catalog;
   List<dynamic> plans = [], training = [], meals = [], media = [];
   List<dynamic> rmRecords = [];
+  List<dynamic> workouts = [];
   Map<String, dynamic>? nutrition;
   Map<String, dynamic>? coachProfile;
   int chatRefreshToken = 0;
@@ -211,7 +213,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               seconds:
                   path == '/plans/generate' ||
                       path == '/movement/analyze' ||
-                      path == '/coach/messages'
+                      path == '/coach/messages' ||
+                      path.endsWith('/review')
                   ? 110
                   : 20,
             ),
@@ -221,7 +224,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             seconds:
                 path == '/plans/generate' ||
                     path == '/movement/analyze' ||
-                    path == '/coach/messages'
+                    path == '/coach/messages' ||
+                    path.endsWith('/review')
                 ? 110
                 : 20,
           ),
@@ -298,6 +302,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       request('/nutrition/today'),
       request('/media'),
       request('/rm'),
+      request('/workouts'),
     ]);
     if (!mounted) return;
     setState(() {
@@ -307,6 +312,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       meals = nutrition!['records'];
       media = result[3];
       rmRecords = result[4];
+      workouts = result[5] is Map ? (result[5]['items'] as List? ?? []) : [];
     });
   }
 
@@ -501,7 +507,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       onTap: () => setState(() => tab = 5),
     ),
     const Divider(height: 24),
-    const Text('对话会完善画像，你也可以在下方调整。'),
+    trainingMemoryPanel(),
+    const Text('对话中的明确事实和确认完成的训练共同完善画像，你也可以在下方调整。'),
     if (coachProfile != null) ...[
       const SizedBox(height: 12),
       Text(
@@ -561,6 +568,77 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       await refresh();
     }),
   ]);
+  Map<String, Map<String, dynamic>> get workoutExercises => {
+    for (final e in catalog?['exercises'] ?? [])
+      if (e['type'] == 'weighted') '${e['id']}': Map<String, dynamic>.from(e),
+  };
+
+  Future<bool> openWorkoutLog({
+    String? liveId,
+    List<int> detected = const [],
+    int? minutes,
+    String? captureId,
+  }) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => WorkoutLogPage(
+          request: (path, method, body) =>
+              request(path, method: method, body: body),
+          exercises: workoutExercises,
+          coachId: coachReminders.settings.coachId,
+          liveExerciseId: liveId,
+          detectedSets: detected,
+          liveDurationMinutes: minutes,
+          liveCaptureId: captureId,
+          initialExerciseId: exercise,
+          onSaved: () async {
+            await loadCoachProfile();
+            await refresh();
+          },
+        ),
+      ),
+    );
+    return result == true;
+  }
+
+  Widget trainingMemoryPanel() {
+    final memory = coachProfile?['training_memory'] as Map?;
+    final count = memory?['session_count'] ?? 0;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('训练档案', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              count == 0
+                  ? '确认完成训练后，表现和复盘会持续沉淀到这里。'
+                  : '累计 $count 条训练记录 · 近28天训练 ${memory?['training_days_last_28']} 天',
+            ),
+            if (count > 0) ...[
+              Text(
+                '最近训练：${memory?['last_training_day']} · 累计 ${memory?['total_sets']} 组',
+              ),
+              for (final e
+                  in (memory?['exercise_progress'] as List? ?? []).take(5))
+                Text(
+                  '${e['name']} · ${e['last_day']} · ${e['sets']}组 · 平均 RPE ${e['average_rpe']}',
+                ),
+              if ((memory?['recent_discomfort'] as List? ?? []).isNotEmpty)
+                const Text('近期有训练不适记录；下次先确认当前状态，暂停引起不适的动作。'),
+            ],
+            TextButton(
+              onPressed: () => setState(() => tab = 2),
+              child: const Text('查看记录与复盘'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget trainingPage() => Column(
     children: [
       planPanel(),
@@ -578,52 +656,64 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             ? null
             : Map<String, dynamic>.from(plans.first),
       ),
-      panel('记录负重训练', [
-        exerciseSelect(),
-        for (final e in catalog?['exercises'] ?? [])
-          if (e['id'] == exercise) Text(e['weight_basis']),
-        field('负重 / kg（按动作库口径）', load),
-        field('组数', sets),
-        field('每组次数', reps),
-        field('主观用力程度 / RPE 1–10', rpe),
-        CheckboxListTile(
-          value: pain,
-          title: const Text('出现疼痛或不适'),
-          onChanged: (v) => setState(() => pain = v ?? false),
+      panel('训练记录与复盘', [
+        const Text('每次训练完成后确认实际组次与感受，私教会据此了解你的表现并给出下次建议。'),
+        FilledButton.icon(
+          onPressed: () => openWorkoutLog(),
+          icon: const Icon(Icons.task_alt),
+          label: const Text('记录本次训练'),
         ),
-        action('保存训练', () async {
-          final result = await request(
-            '/training',
-            method: 'POST',
-            body: {
-              'exercise_id': exercise,
-              'weight_kg': number(load),
-              'sets': integer(sets),
-              'reps': integer(reps),
-              'rpe': number(rpe),
-              'pain': pain,
-            },
-          );
-          await refresh();
-          notify(result['feedback']);
-        }),
       ]),
       panel(
         '训练历史',
-        training.isEmpty
-            ? [const Text('还没有训练记录')]
+        workouts.isEmpty
+            ? [const Text('还没有确认的训练记录')]
             : [
-                for (final t in training)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
+                for (final w in workouts)
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
                     title: Text(
-                      t['name'] ??
-                          exercises[t['exercise_id']] ??
-                          t['exercise_id'],
+                      '${w['day']} · ${(w['exercises'] as List).map((e) => e['name']).join('、')}',
                     ),
                     subtitle: Text(
-                      '${t['day']} · ${t['weight_kg']} kg · ${t['sets']} × ${t['reps']}\n${t['feedback']}',
+                      w['source'] == 'legacy'
+                          ? '旧版动作记录'
+                          : '${w['summary']?['summary'] ?? ''}${w['ai_review'] == null ? ' · 基础复盘' : ' · 已有 AI 复盘'}',
                     ),
+                    children: [
+                      for (final e in w['exercises']) ...[
+                        Text('${e['name']} · ${e['weight_basis'] ?? ''}'),
+                        for (int i = 0; i < (e['sets'] as List).length; i++)
+                          Text(
+                            '第 ${i + 1} 组：${e['sets'][i]['weight_kg']} kg × ${e['sets'][i]['reps']} · RPE ${e['sets'][i]['rpe']}${e['sets'][i]['pain'] == true ? ' · 有不适' : ''}',
+                          ),
+                        if ('${e['notes'] ?? ''}'.isNotEmpty)
+                          Text('动作感受：${e['notes']}'),
+                      ],
+                      if (w['duration_minutes'] != null)
+                        Text('本次用时 ${w['duration_minutes']} 分钟'),
+                      if ('${w['notes'] ?? ''}'.isNotEmpty)
+                        Text('整体感受：${w['notes']}'),
+                      WorkoutReview(record: Map<String, dynamic>.from(w)),
+                      if (w['source'] != 'legacy' && w['ai_review'] == null)
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () => perform(() async {
+                                  await request(
+                                    '/workouts/${w['id']}/review',
+                                    method: 'POST',
+                                    body: {
+                                      'coach_id':
+                                          coachReminders.settings.coachId,
+                                    },
+                                  );
+                                  await loadCoachProfile();
+                                  await refresh();
+                                }),
+                          child: const Text('生成 AI 私教复盘'),
+                        ),
+                    ],
                   ),
               ],
       ),
@@ -793,6 +883,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                   MaterialPageRoute<void>(
                     builder: (_) => LiveSession(
                       exerciseId: liveExercise,
+                      onFinish: (sets, minutes, captureId) => openWorkoutLog(
+                        liveId: liveExercise,
+                        detected: sets,
+                        captureId: captureId,
+                        minutes: minutes,
+                      ),
                       assetBase: apiBase,
                       exerciseDetails: Map<String, dynamic>.from(
                         (catalog!['exercises'] as List).firstWhere(
