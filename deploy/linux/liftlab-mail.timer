@@ -1,0 +1,10 @@
+[Unit]
+Description=Process verification mail every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+Unit=liftlab-mail.service
+
+[Install]
+WantedBy=timers.target
