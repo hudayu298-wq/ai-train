@@ -22,6 +22,78 @@ PLAN = {'name': '我的周计划', 'days': [{'name': '周一', 'exercises': [
 def isolate_records():
     with module.connection() as db:
         db.execute('DELETE FROM records')
+        db.execute('DELETE FROM catalog_items')
+    module.library.initialize(module.connection)
+
+def test_library_search_categories_and_sources():
+    assert len(client.get('/api/catalog').json()['exercises']) == 3
+    assert len(client.get('/api/catalog?extended=true').json()['exercises']) == 38
+    result = client.get('/api/library/foods?q=香蕉').json()
+    assert result['total'] == 1
+    assert result['items'][0]['source_id'] == '173944'
+    assert result['items'][0]['basis_g'] == 100
+    assert result['items'][0]['kcal'] == 89
+    assert client.get('/api/library/foods?limit=1').json()['total'] == 44
+    assert len(client.get('/api/library/foods?limit=1').json()['items']) == 1
+    assert client.get('/api/library/exercises?type=weighted').json()['total'] == 31
+    assert client.get('/api/library/exercises?type=bodyweight').json()['total'] == 7
+    assert client.get('/api/library/exercises?q=哑铃&category=背部').json()['items'][0]['id'] == 'dumbbell_row'
+
+CUSTOM_FOOD = {'name':'测试酸奶','category':'乳制品','state':'prepared',
+    'kcal':100,'protein':8,'fat':4,'carbs':8,'source_label':'测试包装每100g标签'}
+
+def test_library_edits_do_not_recalculate_old_meals_and_archive_is_durable():
+    entry = client.post('/api/library/foods',json=CUSTOM_FOOD).json()
+    meal = client.post('/api/meals',json={'food_id':entry['id'],'grams':150}).json()
+    assert meal['nutrients']['kcal'] == 150
+    assert meal['food_source'] == CUSTOM_FOOD['source_label']
+    updated = client.put('/api/library/foods/'+entry['id'],json={**CUSTOM_FOOD,'kcal':120})
+    assert updated.status_code == 200
+    assert client.get('/api/meals').json()[0]['nutrients']['kcal'] == 150
+    assert client.post('/api/meals',json={'food_id':entry['id'],'grams':100}).json()['nutrients']['kcal'] == 120
+    assert client.delete('/api/library/foods/'+entry['id']).status_code == 200
+    assert client.post('/api/meals',json={'food_id':entry['id'],'grams':100}).status_code == 422
+    assert len(client.get('/api/meals').json()) == 2
+    client.delete('/api/library/foods/rice')
+    module.library.initialize(module.connection)
+    assert client.get('/api/library/foods/rice').status_code == 404
+
+def test_library_import_is_atomic_and_limits_nutrients():
+    first={**CUSTOM_FOOD,'id':'import_a'}
+    invalid={**CUSTOM_FOOD,'id':'import_b','protein':90,'fat':90}
+    assert client.post('/api/library/foods/import',json=[first,invalid]).status_code == 422
+    assert client.get('/api/library/foods/import_a').status_code == 404
+    assert client.post('/api/library/foods/import',json=[first,{**CUSTOM_FOOD,'id':'rice'}]).status_code == 409
+    assert client.get('/api/library/foods/import_a').status_code == 404
+    assert client.post('/api/library/foods/import',json=[first]).json()['imported'] == 1
+    assert client.get('/api/library/foods/export').json()['kind'] == 'foods'
+    assert client.post('/api/library/foods',json={**CUSTOM_FOOD,'kcal':-10}).status_code == 422
+
+def test_more_weighted_exercises_work_in_plan_training_and_rm():
+    entry=client.post('/api/library/exercises',json={'name':'测试划船','category':'背部',
+        'equipment':'器械','realtime_supported':True}).json()
+    assert entry['realtime_supported'] is False
+    assert client.put('/api/library/exercises/'+entry['id'],json={**entry,'equipment':'另一器械'}).status_code == 422
+    assert client.post('/api/training',json={'exercise_id':entry['id'],'weight_kg':20,'sets':3,'reps':8,'rpe':7}).status_code == 200
+    assert client.post('/api/rm',json={'exercise_id':entry['id'],'weight_kg':20,'reps':8,
+        'measured_on':module.nutrition_today().isoformat(),'confirmed_maximum':True}).status_code == 200
+    plan={'name':'扩展计划','days':[{'name':'周一','exercises':[{**PLAN['days'][0]['exercises'][0],'exercise_id':entry['id'],'weight_kg':10}]}]}
+    assert client.post('/api/plans',json=plan).status_code == 200
+    assert client.post('/api/training',json={'exercise_id':'pushup','weight_kg':0,'sets':3,'reps':8,'rpe':7}).status_code == 422
+    plan['days'][0]['exercises'][0]['exercise_id']='unknown'
+    assert client.post('/api/plans/assess',json=plan).status_code == 422
+    assert client.put('/api/library/exercises/bench',json={'name':'不同卧推','category':'胸部','equipment':'哑铃'}).status_code == 422
+
+def test_ai_uses_weighted_catalog_and_rejects_unknown_actions(monkeypatch):
+    client.put('/api/profile',json=PROFILE)
+    result=ai_result()
+    async def fake(profile,rm,schema):
+        assert 'dumbbell_row' in schema['$defs']['PlanExercise']['properties']['exercise_id']['enum']
+        assert 'pushup' not in schema['$defs']['PlanExercise']['properties']['exercise_id']['enum']
+        result['days'][0]['exercises'][0]['exercise_id']='pushup'
+        return result,'test-model'
+    monkeypatch.setattr(module.ai_planner,'generate',fake)
+    assert client.post('/api/plans/generate').status_code == 502
 
 def test_user_plan_is_preserved_and_versioned():
     assert client.put('/api/profile', json=PROFILE).status_code == 200

@@ -8,6 +8,7 @@ import 'package:http_parser/http_parser.dart';
 
 import 'live/live_session.dart';
 import 'user_plan_editor.dart';
+import 'library_page.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -62,7 +63,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   final grams = TextEditingController(text: '150');
   String sex = 'male', goal = 'muscle_gain', experience = 'beginner';
   int days = 2;
-  String exercise = 'bench', food = 'rice';
+  String exercise = 'bench', food = 'rice', liveExercise = 'bench';
   bool pain = false;
 
   @override
@@ -121,7 +122,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Future<dynamic> request(
     String path, {
     String method = 'GET',
-    Map<String, dynamic>? body,
+    Object? body,
   }) async {
     final req = http.Request(method, Uri.parse('$apiBase/api$path'));
     if (body != null) {
@@ -158,7 +159,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> initialize() => perform(() async {
-    catalog = Map<String, dynamic>.from(await request('/catalog'));
+    catalog = Map<String, dynamic>.from(await request('/catalog?extended=true'));
+    normalizeSelections();
     final p = await request('/profile');
     if (p != null) {
       age.text = '${p['age']}';
@@ -190,6 +192,51 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       rmRecords = result[4];
     });
   }
+
+  void normalizeSelections() {
+    if (!exercises.containsKey(exercise)) {
+      exercise = exercises.keys.firstOrNull ?? '';
+    }
+    final foods = catalog!['foods'] as List;
+    if (!foods.any((e) => e['id'] == food)) {
+      food = foods.isEmpty ? '' : foods.first['id'];
+    }
+    final live = (catalog!['exercises'] as List).where(
+      (e) => e['realtime_supported'] == true,
+    );
+    if (!live.any((e) => e['id'] == liveExercise)) {
+      liveExercise = live.firstOrNull?['id'] ?? '';
+    }
+  }
+
+  Future<void> refreshCatalog() async {
+    final result = Map<String, dynamic>.from(await request('/catalog?extended=true'));
+    if (!mounted) return;
+    setState(() {
+      catalog = result;
+      normalizeSelections();
+    });
+    await refresh();
+  }
+
+  void openLibrary() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LibraryPage(
+        request: (path, method, body) =>
+            request(path, method: method, body: body),
+        onChanged: refreshCatalog,
+        onSelect: (kind, entry) => setState(() {
+          if (kind == 'foods') {
+            food = entry['id'];
+            tab = 3;
+          } else {
+            exercise = entry['id'];
+            tab = 2;
+          }
+        }),
+      ),
+    ),
+  );
 
   void notify(String message) {
     if (mounted) {
@@ -232,7 +279,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   ) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
     child: DropdownButtonFormField<String>(
-      initialValue: value,
+      key: ValueKey('$title-$value-${items.keys.join(',')}'),
+      initialValue: items.containsKey(value) ? value : null,
+      isExpanded: true,
       decoration: InputDecoration(
         labelText: title,
         border: const OutlineInputBorder(),
@@ -240,7 +289,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       items: items.entries
           .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
           .toList(),
-      onChanged: busy
+      onChanged: busy || items.isEmpty
           ? null
           : (v) {
               if (v != null) setState(() => change(v));
@@ -269,7 +318,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ),
   );
   Map<String, String> get exercises => {
-    for (final e in catalog?['exercises'] ?? []) '${e['id']}': '${e['name']}',
+    for (final e in catalog?['exercises'] ?? [])
+      if (e['type'] == 'weighted') '${e['id']}': '${e['name']}',
   };
   Widget exerciseSelect() =>
       select('动作变式', exercise, exercises, (v) => exercise = v);
@@ -413,7 +463,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       ),
       panel('记录负重训练', [
         exerciseSelect(),
-        field('杠铃总重量 / kg', load),
+        for (final e in catalog?['exercises'] ?? [])
+          if (e['id'] == exercise) Text(e['weight_basis']),
+        field('负重 / kg（按动作库口径）', load),
         field('组数', sets),
         field('每组次数', reps),
         field('主观用力程度 / RPE 1–10', rpe),
@@ -447,7 +499,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 for (final t in training)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(exercises[t['exercise_id']] ?? ''),
+                    title: Text(
+                      t['name'] ??
+                          exercises[t['exercise_id']] ??
+                          t['exercise_id'],
+                    ),
                     subtitle: Text(
                       '${t['day']} · ${t['weight_kg']} kg · ${t['sets']} × ${t['reps']}\n${t['feedback']}',
                     ),
@@ -475,7 +531,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           nutrientProgress(entry.key, entry.value),
       ]),
       panel('记录当天这一餐', [
-        const Text('当前食物库是开发示例数据，每100克计，尚未经专业审核。'),
+        const Text('营养按每100克可食部分计算，请核对生熟状态与来源。品牌食品可按包装标签新增。'),
+        OutlinedButton.icon(
+          onPressed: openLibrary,
+          icon: const Icon(Icons.search),
+          label: const Text('搜索食物 / 管理资料库'),
+        ),
         select('餐次', mealType, mealTypes, (v) => mealType = v),
         select('食物', food, {
           for (final f in catalog?['foods'] ?? []) '${f['id']}': '${f['name']}',
@@ -561,25 +622,30 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     children: [
       panel('实时动作训练', [
         const Text('支架取景 → 侧面角度确认 → 耳机测试 → 实时姿态计次与语音提示。'),
-        exerciseSelect(),
+        select('实时检测动作', liveExercise, {
+          for (final e in catalog?['exercises'] ?? [])
+            if (e['realtime_supported'] == true) e['id']: e['name'],
+        }, (v) => liveExercise = v),
         ...[
           for (final e in catalog?['exercises'] ?? [])
-            if (e['id'] == exercise) Text(e['view']),
+            if (e['id'] == liveExercise) Text(e['view']),
         ],
         const SizedBox(height: 12),
         FilledButton.icon(
           icon: const Icon(Icons.videocam),
           label: const Text('进入实时训练'),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => LiveSession(exerciseId: exercise),
-            ),
-          ),
+          onPressed: liveExercise.isEmpty
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LiveSession(exerciseId: liveExercise),
+                  ),
+                ),
         ),
         const SizedBox(height: 12),
         const Text('实时姿态检测支持 Android / iOS；Web 展示拍摄引导。计次和节奏规则仍需真机与教练验证。'),
         const Text('请采取保护措施，不要为了录像尝试更大重量。'),
-        action('上传训练录像', () => upload('video')),
+        action('上传训练录像', () => upload('video', exerciseId: liveExercise)),
         const Text('支持 MP4/MOV，最大100MB。'),
       ]),
       panel(
@@ -598,7 +664,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ],
   );
 
-  Future<void> upload(String kind) async {
+  Future<void> upload(String kind, {String? exerciseId}) async {
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: kind == 'meal'
@@ -617,7 +683,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         : (ext == 'mov' ? 'video/quicktime' : 'video/mp4');
     final req = http.MultipartRequest('POST', Uri.parse('$apiBase/api/media'))
       ..fields['kind'] = kind
-      ..fields['exercise_id'] = exercise
+      ..fields['exercise_id'] = exerciseId ?? exercise
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
@@ -640,6 +706,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     appBar: AppBar(
       title: const Text('LiftLab · 训练有据'),
       actions: [
+        IconButton(
+          onPressed: openLibrary,
+          tooltip: '食物与动作库',
+          icon: const Icon(Icons.menu_book_outlined),
+        ),
         IconButton(
           onPressed: busy ? null : initialize,
           icon: const Icon(Icons.refresh),

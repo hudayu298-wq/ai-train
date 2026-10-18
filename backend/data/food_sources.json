@@ -1,0 +1,11 @@
+{
+  "dataset": "USDA FoodData Central SR Legacy CSV 2018-04",
+  "url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip",
+  "files_sha256": {
+    "food.csv": "de8b0390058db4f102368c9fbdfde144790b480ff4cb0507c0e060ef99805dee",
+    "food_nutrient.csv": "6d07e6fc062b09750c4d95112be5a5cdb56a2346efcfd0c96b7a7d705812d4bd"
+  },
+  "curated_count": 40,
+  "legacy_count": 4,
+  "basis": "per 100 g edible portion"
+}
