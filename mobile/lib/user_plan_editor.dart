@@ -309,52 +309,60 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
             Text('恢复：${aiDraft!['recovery']}'),
             Text('调整建议：${aiDraft!['progression']}'),
           ],
-          const Divider(height: 32),
-          Text('我的 RM 数据', style: Theme.of(context).textTheme.titleLarge),
-          const Text('填写已有数据：例如80kg最多完成5次即5RM。普通训练组不等于RM；不需要为使用App专门尝试极限重量。'),
-          selector('RM 对应动作变式', rmExercise, (v) => rmExercise = v),
-          field('RM 重量 / kg（含杠铃）', rmWeight),
-          field('最多完成次数 / 1–10', rmReps),
-          field('数据日期 / YYYY-MM-DD', rmDate, text: true),
-          CheckboxListTile(
-            value: confirmed,
-            title: const Text('确认是该重量的最大完成次数'),
-            onChanged: busy
-                ? null
-                : (v) => setState(() => confirmed = v ?? false),
-          ),
-          FilledButton(
-            onPressed: busy
-                ? null
-                : () => run(() async {
-                    await widget.post('/rm', {
-                      'exercise_id': rmExercise,
-                      'weight_kg': numeric(rmWeight),
-                      'reps': integer(rmReps),
-                      'measured_on': rmDate.text.trim(),
-                      'confirmed_maximum': confirmed,
-                    });
-                    await widget.onSaved();
-                    if (mounted) {
-                      setState(() {
-                        assessment = null;
-                        message = 'RM已保存，请重新评估计划';
-                      });
-                    }
-                  }),
-            child: const Text('保存 RM'),
-          ),
-          for (final r in widget.rmRecords)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                '${widget.exercises[r['exercise_id']]} · ${r['weight_kg']}kg × ${r['reps']}RM',
+          const Divider(height: 28),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('我的 RM 数据'),
+            subtitle: Text('${widget.rmRecords.length} 项记录 · 用于负荷评估'),
+            children: [
+              const Text(
+                '填写已有数据：例如80kg最多完成5次即5RM。普通训练组不等于RM；不需要为使用App专门尝试极限重量。',
               ),
-              subtitle: Text(
-                '${r['measured_on']} · ${r['reference_1rm_kg'] == null ? '未确认最大次数，暂不参与评估' : '${r['reps'] == 1 ? '用户提供1RM' : '估算1RM'} ${r['reference_1rm_kg']}kg'}',
+              selector('RM 对应动作变式', rmExercise, (v) => rmExercise = v),
+              field('RM 重量 / kg（含杠铃）', rmWeight),
+              field('最多完成次数 / 1–10', rmReps),
+              field('数据日期 / YYYY-MM-DD', rmDate, text: true),
+              CheckboxListTile(
+                value: confirmed,
+                title: const Text('确认是该重量的最大完成次数'),
+                onChanged: busy
+                    ? null
+                    : (v) => setState(() => confirmed = v ?? false),
               ),
-            ),
-          const Divider(height: 32),
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : () => run(() async {
+                        await widget.post('/rm', {
+                          'exercise_id': rmExercise,
+                          'weight_kg': numeric(rmWeight),
+                          'reps': integer(rmReps),
+                          'measured_on': rmDate.text.trim(),
+                          'confirmed_maximum': confirmed,
+                        });
+                        await widget.onSaved();
+                        if (mounted) {
+                          setState(() {
+                            assessment = null;
+                            message = 'RM已保存，请重新评估计划';
+                          });
+                        }
+                      }),
+                child: const Text('保存 RM'),
+              ),
+              for (final r in widget.rmRecords)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    '${widget.exercises[r['exercise_id']]} · ${r['weight_kg']}kg × ${r['reps']}RM',
+                  ),
+                  subtitle: Text(
+                    '${r['measured_on']} · ${r['reference_1rm_kg'] == null ? '未确认最大次数，暂不参与评估' : '${r['reps'] == 1 ? '用户提供1RM' : '估算1RM'} ${r['reference_1rm_kg']}kg'}',
+                  ),
+                ),
+            ],
+          ),
+          const Divider(height: 28),
           Text('检查与调整计划草稿', style: Theme.of(context).textTheme.titleLarge),
           const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
           field('计划名称', title, text: true),

@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 items = json.loads((ROOT / 'backend/data/coach_personas.json').read_text(encoding='utf-8'))
-fields = ['id', 'name', 'style', 'animal', 'color', 'greeting', 'tap_line', 'thinking_line',
+fields = ['id', 'name', 'style', 'appearance', 'color', 'greeting', 'tap_line', 'thinking_line',
           'reply_line', 'training_line', 'lead_line', 'meal_line']
 def camel(key):
     parts = key.split('_')

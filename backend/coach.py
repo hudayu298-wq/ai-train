@@ -16,7 +16,7 @@ except ImportError:
     import coaches
 
 PROMPT = (Path(__file__).parent / 'prompts' / 'fitness_coach.md').read_text(encoding='utf-8')
-PROMPT_VERSION = 'coach-2.0'
+PROMPT_VERSION = 'coach-2.1'
 LABELS = {
     'age': '年龄', 'height_cm': '身高 / cm', 'weight_kg': '体重 / kg',
     'sex': '代谢估算性别', 'goal': '训练目标', 'experience': '训练经验',

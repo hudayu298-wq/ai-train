@@ -16,6 +16,7 @@ import 'reminders/reminder_page.dart';
 import 'reminders/reminder_settings.dart';
 import 'coaches/coach_picker.dart';
 import 'coaches/coach_persona.dart';
+import 'ui_theme.dart';
 
 const apiBase = String.fromEnvironment(
   'API_BASE',
@@ -28,11 +29,7 @@ class LiftLab extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'LiftLab',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff244b3c)),
-      scaffoldBackgroundColor: const Color(0xfff5f5ef),
-      useMaterial3: true,
-    ),
+    theme: buildAppTheme(),
     home: const Home(),
   );
 }
@@ -422,14 +419,14 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ),
   );
   Widget panel(String title, List<Widget> children) => Card(
-    margin: const EdgeInsets.only(bottom: 18),
+    margin: const EdgeInsets.only(bottom: 16),
     child: Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           ...children,
         ],
       ),
@@ -504,7 +501,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       onTap: () => setState(() => tab = 5),
     ),
     const Divider(height: 24),
-    const Text('对话中明确提供的信息会自动记录在这里，也可以手动修改。'),
+    const Text('对话会完善画像，你也可以在下方调整。'),
     if (coachProfile != null) ...[
       const SizedBox(height: 12),
       Text(
@@ -513,11 +510,6 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             : '待补充：${(coachProfile!['missing_fields'] as List).map((k) => coachProfile!['labels'][k]).join('、')}',
       ),
       const SizedBox(height: 12),
-      for (final e in (coachProfile!['facts'] as Map).entries)
-        Text(
-          '${coachProfile!['labels'][e.key]}：${CoachChat.displayValue(e.value)}',
-        ),
-      const Divider(height: 28),
     ],
     field('年龄（18岁及以上）', age),
     field('身高 / cm', height),
@@ -647,13 +639,25 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 ? '请刷新以更新营养目标。'
                 : '先保存画像，才能估算每日营养目标。',
           ),
-        for (final entry in {
-          'kcal': '热量',
-          'protein': '蛋白质',
-          'fat': '脂肪',
-          'carbs': '碳水',
-        }.entries)
-          nutrientProgress(entry.key, entry.value),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, box) => Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final entry in {
+                'kcal': '热量',
+                'protein': '蛋白质',
+                'fat': '脂肪',
+                'carbs': '碳水',
+              }.entries)
+                SizedBox(
+                  width: (box.maxWidth - 12) / 2,
+                  child: nutrientProgress(entry.key, entry.value),
+                ),
+            ],
+          ),
+        ),
       ]),
       panel('记录当天这一餐', [
         const Text('营养按每100克可食部分计算，请核对生熟状态与来源。品牌食品可按包装标签新增。'),
@@ -716,19 +720,33 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     final target = metric['target'];
     final excess = (metric['excess'] as num?)?.toDouble() ?? 0;
     final ratio = ((metric['percent'] as num?)?.toDouble() ?? 0) / 100;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xfff8f9fc),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '$label：已摄入 ${metric['consumed']} $unit / ${target == null ? '目标未设置' : '目标 $target $unit'}',
+            label,
+            style: const TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${metric['consumed']} $unit',
+            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            target == null ? '目标待设置' : '目标 $target $unit',
+            style: const TextStyle(fontSize: 11, color: AppColors.muted),
           ),
           const SizedBox(height: 6),
           if (target != null) ...[
             LinearProgressIndicator(
               value: ratio.clamp(0.0, 1.0),
-              minHeight: 8,
+              minHeight: 4,
               color: excess > 0 ? Colors.orange.shade700 : null,
             ),
             const SizedBox(height: 6),
@@ -736,6 +754,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               excess > 0
                   ? '超出目标 $excess $unit'
                   : '距目标还差 ${metric['remaining']} $unit',
+              style: const TextStyle(fontSize: 11, color: AppColors.muted),
             ),
           ],
         ],
@@ -746,13 +765,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Widget analysisPage() => Column(
     children: [
       panel('动作分类与动作库', [
-        const Text('按关节动作分类浏览动作，筛选训练部位，并查看动图、准备步骤和动作要点。'),
-        const SizedBox(height: 8),
-        const Text('分类包括水平推、水平拉、蹲、髋铰链、肘屈曲等；也可区分负重与自重训练。'),
+        const Text('按关节动作和训练部位查找，查看示范与要点。'),
         const SizedBox(height: 12),
         FilledButton.icon(
           icon: const Icon(Icons.menu_book_outlined),
-          label: const Text('按关节动作浏览动作库'),
+          label: const Text('浏览动作分类'),
           onPressed: () => openLibrary(initialKind: 'exercises'),
         ),
       ]),
@@ -941,22 +958,36 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           padding: EdgeInsets.zero,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+              child: Row(
                 children: [
                   CoachAvatar(
-                    size: 72,
+                    size: 52,
                     coachId: coachReminders.settings.coachId,
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'LiftLab',
-                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '${coachReminders.settings.coachName} · 你的 AI 私教',
-                    style: const TextStyle(color: Color(0xff537164)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'LiftLab',
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -.5,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${coachReminders.settings.coachName} · ${personaFor(coachReminders.settings.coachId).style}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -973,7 +1004,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 leading: Icon(item.$2),
                 title: Text(item.$3),
                 selected: tab == item.$1,
-                selectedTileColor: const Color(0xffe3ebdf),
+                selectedTileColor: AppColors.selected,
                 onTap: () => navigate(item.$1),
               ),
             const Divider(height: 32),
