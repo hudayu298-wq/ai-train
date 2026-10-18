@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "status": "source_backed_candidates_not_enabled",
+  "book": {
+    "title": "力量训练基础：用5种杠铃动作极速发展身体实力",
+    "author": "Mark Rippetoe",
+    "original_title": "Starting Strength: Basic Barbell Training",
+    "edition": null,
+    "full_text_verified": false
+  },
+  "rules": [
+    {
+      "id": "lowbar_squat_depth",
+      "variant": "low_bar_barbell_squat",
+      "book_chapter": "深蹲",
+      "book_page": null,
+      "point": "底部观察髋褶皱与膝顶部的相对高度。",
+      "source_url": "https://startingstrength.com/training/can-you-squat-too-deep",
+      "source_kind": "author_companion_article",
+      "view": "true_side_at_hip_height",
+      "requires": ["bottom_phase", "hip_crease", "patella_top", "camera_level"],
+      "unavailable_reason": "关节中心不能等同髋褶皱或膝顶部",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    },
+    {
+      "id": "lowbar_squat_bar_path",
+      "variant": "low_bar_barbell_squat",
+      "book_chapter": "深蹲",
+      "book_page": null,
+      "point": "观察杠铃相对足中部的位置。",
+      "source_url": "https://startingstrength.com/article/lifts/critical-technique-elements-part-1-the-squat",
+      "source_kind": "official_companion_article",
+      "view": "true_side",
+      "requires": ["barbell", "foot_reference", "floor_calibration"],
+      "unavailable_reason": "当前无杠铃检测；不能把代理指标称为测得重心",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    },
+    {
+      "id": "bench_bottom_forearm",
+      "variant": "flat_barbell_bench",
+      "book_chapter": "卧推",
+      "book_page": null,
+      "point": "底部观察前臂位置与握距、触胸位置的关系。",
+      "source_url": "https://startingstrength.com/article/lifts/critical-technique-elements-part-4-the-bench-press",
+      "source_kind": "official_companion_article",
+      "view": "side_with_additional_front_oblique_check",
+      "requires": ["elbow", "wrist", "bottom_phase", "camera_level"],
+      "unavailable_reason": "单侧面无法覆盖完整握距与左右对称",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    },
+    {
+      "id": "bench_bar_path",
+      "variant": "flat_barbell_bench",
+      "book_chapter": "卧推",
+      "book_page": null,
+      "point": "允许触胸点与顶部位置之间存在水平位移。",
+      "source_url": "https://startingstrength.com/article/lifts/critical-technique-elements-part-4-the-bench-press",
+      "source_kind": "official_companion_article",
+      "view": "true_side_at_bench_height",
+      "requires": ["barbell", "bottom_phase", "top_phase", "individual_calibration"],
+      "unavailable_reason": "当前无杠铃检测；不以完全竖直为通用合格条件",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    },
+    {
+      "id": "deadlift_bar_path",
+      "variant": "conventional_barbell_deadlift",
+      "book_chapter": "硬拉",
+      "book_page": null,
+      "point": "杠铃沿腿附近、足中部上方近似竖直运动。",
+      "source_url": "https://startingstrength.com/article/deadlift-mechanics-the-obvious-can-be-obscure",
+      "source_kind": "author_companion_article",
+      "view": "true_side",
+      "requires": ["barbell", "foot_reference", "leg_landmarks", "floor_calibration"],
+      "unavailable_reason": "当前无杠铃检测；杠片遮挡足部时拒绝判断",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    },
+    {
+      "id": "deadlift_start_shoulder",
+      "variant": "conventional_barbell_deadlift",
+      "book_chapter": "硬拉",
+      "book_page": null,
+      "point": "起拉阶段肩部位于杠铃稍前方。",
+      "source_url": "https://startingstrength.com/article/deadlift-mechanics-the-obvious-can-be-obscure",
+      "source_kind": "author_companion_article",
+      "view": "true_side",
+      "requires": ["barbell", "shoulder", "start_phase", "facing_direction"],
+      "unavailable_reason": "尚无可靠杠铃位置与相位标定",
+      "threshold": null,
+      "validated": false,
+      "enabled": false
+    }
+  ]
+}
