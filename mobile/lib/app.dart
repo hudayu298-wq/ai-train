@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:http_parser/http_parser.dart';
 
+import 'live/live_session.dart';
+
 const apiBase = String.fromEnvironment(
   'API_BASE',
   defaultValue: 'http://127.0.0.1:8000',
@@ -439,14 +441,25 @@ class _HomeState extends State<Home> {
   );
   Widget analysisPage() => Column(
     children: [
-      panel('录像动作分析', [
-        const Text('姿态与杠铃检测尚未接入，当前不提供动作质量判断。'),
+      panel('实时动作训练', [
+        const Text('支架取景 → 侧面角度确认 → 耳机测试 → 实时姿态计次与语音提示。'),
         exerciseSelect(),
         ...[
           for (final e in catalog?['exercises'] ?? [])
             if (e['id'] == exercise) Text(e['view']),
         ],
         const SizedBox(height: 12),
+        FilledButton.icon(
+          icon: const Icon(Icons.videocam),
+          label: const Text('进入实时训练'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => LiveSession(exerciseId: exercise),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text('实时姿态检测支持 Android / iOS；Web 展示拍摄引导。计次和节奏规则仍需真机与教练验证。'),
         const Text('请采取保护措施，不要为了录像尝试更大重量。'),
         action('上传训练录像', () => upload('video')),
         const Text('支持 MP4/MOV，最大100MB。'),
