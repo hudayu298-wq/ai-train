@@ -1,0 +1,161 @@
+{
+  "app_name": "练伴",
+  "source": "mobile/assets/branding/lianban-icon-source.png",
+  "outputs": [
+    {
+      "file": "docs/assets/filing/lianban-icon-512.png",
+      "size": 512,
+      "bytes": 94236
+    },
+    {
+      "file": "mobile/assets/branding/lianban-icon-1024.png",
+      "size": 1024,
+      "bytes": 661883
+    },
+    {
+      "file": "mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "size": 48,
+      "bytes": 2935
+    },
+    {
+      "file": "mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "size": 72,
+      "bytes": 5146
+    },
+    {
+      "file": "mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "size": 96,
+      "bytes": 7925
+    },
+    {
+      "file": "mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "size": 144,
+      "bytes": 15617
+    },
+    {
+      "file": "mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "size": 192,
+      "bytes": 25911
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
+      "size": 40,
+      "bytes": 2301
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png",
+      "size": 60,
+      "bytes": 3957
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png",
+      "size": 29,
+      "bytes": 1400
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png",
+      "size": 58,
+      "bytes": 3767
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png",
+      "size": 87,
+      "bytes": 6890
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png",
+      "size": 80,
+      "bytes": 6050
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png",
+      "size": 120,
+      "bytes": 11489
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png",
+      "size": 120,
+      "bytes": 11489
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png",
+      "size": 180,
+      "bytes": 23165
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png",
+      "size": 20,
+      "bytes": 869
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
+      "size": 40,
+      "bytes": 2301
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png",
+      "size": 29,
+      "bytes": 1400
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png",
+      "size": 58,
+      "bytes": 3767
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png",
+      "size": 40,
+      "bytes": 2301
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png",
+      "size": 80,
+      "bytes": 6050
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png",
+      "size": 76,
+      "bytes": 5611
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png",
+      "size": 152,
+      "bytes": 17096
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png",
+      "size": 167,
+      "bytes": 20295
+    },
+    {
+      "file": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+      "size": 1024,
+      "bytes": 661883
+    },
+    {
+      "file": "mobile/web/icons/Icon-192.png",
+      "size": 192,
+      "bytes": 25911
+    },
+    {
+      "file": "mobile/web/icons/Icon-maskable-192.png",
+      "size": 192,
+      "bytes": 25911
+    },
+    {
+      "file": "mobile/web/icons/Icon-512.png",
+      "size": 512,
+      "bytes": 183541
+    },
+    {
+      "file": "mobile/web/icons/Icon-maskable-512.png",
+      "size": 512,
+      "bytes": 183541
+    },
+    {
+      "file": "mobile/web/favicon.png",
+      "size": 32,
+      "bytes": 1664
+    }
+  ]
+}
