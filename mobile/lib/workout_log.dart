@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'profile_setup.dart';
+import 'set_runner.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,13 @@ typedef WorkoutRequest = Future<dynamic> Function(String, String, Object?);
 class WorkoutReview extends StatelessWidget {
   const WorkoutReview({super.key, required this.record});
   final Map<String, dynamic> record;
+
+  String describeSet(dynamic value, {bool target = false}) {
+    if (value == null) return target ? '额外组，无计划目标' : '未记录';
+    return '${value['weight_kg'] == null ? '重量待确认' : '${value['weight_kg']} kg'} × ${value['reps']}次'
+        ' · RIR ${value[target ? 'target_rir' : 'rir'] ?? '未记录'}'
+        ' · 休息 ${value['rest_seconds'] == null ? '未记录' : '${value['rest_seconds']}秒'}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +55,21 @@ class WorkoutReview extends StatelessWidget {
           const SizedBox(height: 12),
           Text(summary['note'], style: Theme.of(context).textTheme.bodySmall),
         ],
+        if (summary?['target_comparison'] is Map) ...[
+          const Divider(),
+          Text(
+            summary!['target_comparison']['basis'] == 'server_plan_at_start'
+                ? '计划目标与实际完成 · 开练冻结版本'
+                : '计划目标与实际完成 · 按确认保存时的计划版本',
+          ),
+          Text(summary['target_comparison']['note']),
+          for (final row in summary['target_comparison']['sets'])
+            Text(
+              '${(record['exercises'] as List).where((e) => e['exercise_id'] == row['exercise_id']).map((e) => e['name']).firstOrNull ?? row['exercise_id']} · 工作组${row['set_number']}：'
+              '目标 ${describeSet(row['target'], target: true)}；'
+              '实际 ${describeSet(row['actual'])}',
+            ),
+        ],
         if (record['plan_progression'] != null)
           PlanChangeCard(
             event: Map<String, dynamic>.from(record['plan_progression']),
@@ -78,16 +101,27 @@ class _SetDraft {
     reps.text = '${data?['reps'] ?? ''}';
     rpe.text = '${data?['rpe'] ?? ''}';
     pain = data?['pain'] == true;
+    assisted = data?['assisted'] == true;
+    setType = data?['set_type'] ?? 'working';
+    rest.text = '${data?['rest_seconds'] ?? ''}';
+    rir.text = '${data?['rir'] ?? ''}';
   }
   final weight = TextEditingController();
   final reps = TextEditingController();
   final rpe = TextEditingController();
+  final rest = TextEditingController(), rir = TextEditingController();
   bool pain = false;
+  bool assisted = false;
+  String setType = 'working';
   Map<String, dynamic> draft() => {
     'weight_kg': weight.text,
     'reps': reps.text,
     'rpe': rpe.text,
     'pain': pain,
+    'assisted': assisted,
+    'set_type': setType,
+    'rest_seconds': rest.text,
+    'rir': rir.text,
   };
   Map<String, dynamic> confirmed() {
     final w = double.tryParse(weight.text),
@@ -106,13 +140,35 @@ class _SetDraft {
         p > 10) {
       throw Exception('请逐组确认重量 0–500 kg、次数 1–100 和 RPE 1–10。');
     }
-    return {'weight_kg': w, 'reps': r, 'rpe': p, 'pain': pain};
+    int? optionalInt(TextEditingController c, int max) {
+      if (c.text.trim().isEmpty) {
+        return null;
+      }
+      final v = int.tryParse(c.text);
+      if (v == null || v < 0 || v > max) {
+        throw Exception('请检查实际休息和剩余次数');
+      }
+      return v;
+    }
+
+    return {
+      'weight_kg': w,
+      'reps': r,
+      'rpe': p,
+      'pain': pain,
+      'assisted': assisted,
+      'set_type': setType,
+      'rest_seconds': optionalInt(rest, 1800),
+      'rir': optionalInt(rir, 10),
+    };
   }
 
   void dispose() {
     weight.dispose();
     reps.dispose();
     rpe.dispose();
+    rest.dispose();
+    rir.dispose();
   }
 }
 
@@ -122,8 +178,14 @@ class _ExerciseDraft {
     List? savedSets,
     String text = '',
     this.detectedReps,
+    this.loadBasis = 'catalog',
+    String equipmentText = '',
+    String discomfortText = '',
+    this.group = 0,
   }) {
     notes.text = text;
+    equipment.text = equipmentText;
+    discomfort.text = discomfortText;
     sets.addAll(
       savedSets == null ? [_SetDraft()] : savedSets.map((s) => _SetDraft(s)),
     );
@@ -131,21 +193,34 @@ class _ExerciseDraft {
   final String id;
   final int? detectedReps;
   final notes = TextEditingController();
+  final equipment = TextEditingController(),
+      discomfort = TextEditingController();
+  String loadBasis;
+  int group;
   final List<_SetDraft> sets = [];
   Map<String, dynamic> draft() => {
     'exercise_id': id,
     'notes': notes.text,
     'detected_reps': detectedReps,
+    'equipment_id': equipment.text,
+    'load_basis': loadBasis,
+    'discomfort_area': discomfort.text,
+    'execution_group': group,
     'sets': sets.map((s) => s.draft()).toList(),
   };
   Map<String, dynamic> confirmed() => {
     'exercise_id': id,
     'notes': notes.text,
     'detected_reps': detectedReps,
+    'equipment_id': equipment.text,
+    'load_basis': loadBasis,
+    'discomfort_area': discomfort.text,
     'sets': sets.map((s) => s.confirmed()).toList(),
   };
   void dispose() {
     notes.dispose();
+    equipment.dispose();
+    discomfort.dispose();
     for (final s in sets) {
       s.dispose();
     }
@@ -189,8 +264,11 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   String category = '';
   bool loading = true, busy = false, reviewing = false;
   Map<String, dynamic>? saved, pending, progression;
-  String? planDay, planId, progressionError;
+  String? planDay, planId, progressionError, startRequestId;
+  Map<String, dynamic>? execution;
   String readiness = 'normal';
+  String completionReason = 'unknown';
+  final completionNotes = TextEditingController();
   bool completedPlanDay = false, progressing = false;
   Future<void> persistence = Future.value();
   bool get locked => busy || pending != null || saved != null;
@@ -225,7 +303,13 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         day = d['day'];
         planDay = d['plan_day'];
         planId = d['plan_id'];
+        execution = d['execution'] == null
+            ? null
+            : Map<String, dynamic>.from(d['execution']);
+        startRequestId = d['start_request_id'];
         readiness = d['readiness'] ?? 'normal';
+        completionReason = d['completion_reason'] ?? 'unknown';
+        completionNotes.text = d['completion_notes'] ?? '';
         completedPlanDay = d['completed_plan_day'] == true;
         duration.text = d['duration'] ?? '';
         notes.text = d['notes'] ?? '';
@@ -239,6 +323,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
               savedSets: e['sets'],
               text: e['notes'] ?? '',
               detectedReps: e['detected_reps'],
+              equipmentText: e['equipment_id'] ?? '',
+              loadBasis: e['load_basis'] ?? 'catalog',
+              discomfortText: e['discomfort_area'] ?? '',
+              group: e['execution_group'] ?? 0,
             ),
           );
         }
@@ -275,9 +363,13 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       'pending': pending,
       'live_capture_id': draftCaptureId,
       'plan_id': planId,
+      'execution': execution,
+      'start_request_id': startRequestId,
       'plan_day': planDay,
       'readiness': readiness,
       'completed_plan_day': completedPlanDay,
+      'completion_reason': completionReason,
+      'completion_notes': completionNotes.text,
     });
     persistence = persistence.catchError((_) {}).then((_) async {
       final prefs = await SharedPreferences.getInstance();
@@ -300,6 +392,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   void dispose() {
     duration.dispose();
     notes.dispose();
+    completionNotes.dispose();
     for (final e in entries) {
       e.dispose();
     }
@@ -330,6 +423,8 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
           'day': day,
           'duration_minutes': mins,
           'notes': notes.text,
+          if (execution != null) 'execution_id': execution!['id'],
+          'execution_groups': executionGroups(),
           'source': draftCaptureId != null ? 'live_confirmed' : 'manual',
           if (planId != null && planDay != null) ...{
             'plan_id': planId,
@@ -337,6 +432,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
           },
           'readiness': readiness,
           'completed_plan_day': completedPlanDay,
+          'completion_reason': completedPlanDay
+              ? 'as_planned'
+              : completionReason,
+          'completion_notes': completionNotes.text,
           'exercises': entries.map((e) => e.confirmed()).toList(),
         };
       }
@@ -409,6 +508,114 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     }
   }
 
+  List<List<String>> executionGroups() {
+    final groups = <int, List<String>>{};
+    for (final e in entries) {
+      if (e.group > 0) {
+        groups.putIfAbsent(e.group, () => []).add(e.id);
+      }
+    }
+    if (groups.values.any((g) => g.length < 2 || g.length > 4)) {
+      throw Exception('每个交替组请选择2至4个动作；单个动作请设为普通组。');
+    }
+    return groups.values.toList();
+  }
+
+  Future<void> runSets() async {
+    try {
+      executionGroups();
+      if (planId != null && planDay != null && execution == null) {
+        setState(() {
+          busy = true;
+          error = null;
+        });
+        startRequestId ??= 'start-${DateTime.now().microsecondsSinceEpoch}';
+        await persist();
+        execution = Map<String, dynamic>.from(
+          await widget.request('/workouts/start', 'POST', {
+            'plan_id': planId,
+            'plan_day': planDay,
+            'day': day,
+            'request_id': startRequestId,
+          }),
+        );
+        await persist();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          busy = false;
+          error = '$e';
+        });
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => busy = false);
+    final steps = <Map<String, dynamic>>[];
+    final destinations = <_SetDraft>[];
+    Map? dayTarget;
+    final referencePlan = execution?['plan_snapshot'] ?? widget.currentPlan;
+    if (referencePlan?['id'] == planId && planDay != null) {
+      for (final d in referencePlan!['days']) {
+        if (d['name'] == planDay) dayTarget = d as Map;
+      }
+    }
+    for (final e in entries) {
+      Map? target;
+      for (final t in dayTarget?['exercises'] ?? []) {
+        if (t['exercise_id'] == e.id) target = t as Map;
+      }
+      var workingIndex = 0;
+      for (var i = 0; i < e.sets.length; i++) {
+        final set = e.sets[i];
+        final planned =
+            set.setType == 'working' &&
+            target != null &&
+            workingIndex < target['sets'];
+        if (set.setType == 'working') workingIndex++;
+        steps.add({
+          'exercise_id': e.id,
+          'group': e.group,
+          'destination_index': destinations.length,
+          'name': widget.exercises[e.id]?['name'] ?? e.id,
+          'set_number': i + 1,
+          'actual': set.draft(),
+          'weight_basis': widget.exercises[e.id]?['weight_basis'],
+          'target': planned ? target : null,
+        });
+        destinations.add(set);
+      }
+    }
+    if (steps.isEmpty) return;
+    final orderedSteps = interleaveSteps(steps);
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => SetRunner(
+          steps: orderedSteps,
+          frozen: execution != null,
+          onRecorded: (index, actual) {
+            final set =
+                destinations[orderedSteps[index]['destination_index'] as int];
+            set.weight.text = '${actual['weight_kg']}';
+            set.reps.text = '${actual['reps']}';
+            set.rpe.text = '${actual['rpe']}';
+            set.rir.text = '${actual['rir'] ?? ''}';
+            set.pain = actual['pain'] == true;
+            if (actual['rest_seconds'] != null) {
+              set.rest.text = '${actual['rest_seconds']}';
+            }
+            changed();
+          },
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Widget planLink() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -429,7 +636,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                 child: Text('${d['name']}', overflow: TextOverflow.ellipsis),
               ),
           ],
-          onChanged: locked
+          onChanged: locked || execution != null
               ? null
               : (value) {
                   setState(() {
@@ -445,8 +652,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                             savedSets: [
                               for (int i = 0; i < e['sets']; i++)
                                 {
-                                  'weight_kg': e['weight_kg'],
-                                  'reps': e['reps'],
+                                  // Targets are displayed separately; actual values need confirmation.
                                 },
                             ],
                           ),
@@ -457,6 +663,24 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                   changed();
                 },
         ),
+      if (execution != null) ...[
+        Text(
+          '已冻结开练目标 · 版本${execution!['plan_snapshot']['version'] ?? 1} · ${execution!['started_at']}',
+        ),
+        TextButton(
+          onPressed: locked
+              ? null
+              : () {
+                  setState(() {
+                    execution = null;
+                    startRequestId = null;
+                    completedPlanDay = false;
+                  });
+                  changed();
+                },
+          child: const Text('保留实际草稿，解除冻结以重新关联计划'),
+        ),
+      ],
       if (planDay != null)
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,
@@ -565,7 +789,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                   TextButton.icon(
                     icon: const Icon(Icons.calendar_today_outlined),
                     label: Text('训练日期 $day'),
-                    onPressed: locked
+                    onPressed: locked || execution != null
                         ? null
                         : () async {
                             final now = DateTime.now().toUtc().add(
@@ -589,7 +813,40 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                           },
                   ),
                   planLink(),
+                  OutlinedButton.icon(
+                    onPressed: locked || entries.isEmpty ? null : runSets,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('开始逐组训练与休息计时'),
+                  ),
                   input('本次训练用时 / 分钟（可留空）', duration),
+                  DropdownButtonFormField<String>(
+                    initialValue: completionReason,
+                    decoration: const InputDecoration(labelText: '本次完成情况/影响因素'),
+                    items: [
+                      for (final e in {
+                        'unknown': '未注明',
+                        'as_planned': '按安排完成',
+                        'time': '时间不足',
+                        'equipment': '器械不可用',
+                        'fatigue': '疲劳',
+                        'discomfort': '不适',
+                        'other': '其他',
+                      }.entries)
+                        DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    ],
+                    onChanged: locked
+                        ? null
+                        : (v) {
+                            setState(() {
+                              completionReason = v!;
+                              if (!['unknown', 'as_planned'].contains(v)) {
+                                completedPlanDay = false;
+                              }
+                            });
+                            changed();
+                          },
+                  ),
+                  input('完成情况补充（可选）', completionNotes, text: true),
                   for (final e in entries)
                     Card(
                       child: Padding(
@@ -621,6 +878,66 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                               ],
                             ),
                             Text(widget.exercises[e.id]?['weight_basis'] ?? ''),
+                            ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              title: const Text('器械与负重口径（可选）'),
+                              children: [
+                                input(
+                                  '器械标识（如A区史密斯1号）',
+                                  e.equipment,
+                                  text: true,
+                                ),
+                                DropdownButtonFormField<String>(
+                                  initialValue: e.loadBasis,
+                                  decoration: const InputDecoration(
+                                    labelText: '本次记录的重量口径',
+                                  ),
+                                  items: [
+                                    for (final b in {
+                                      'catalog': '使用动作库标注口径',
+                                      'total': '总重量',
+                                      'per_hand': '单手重量',
+                                      'machine_display': '器械显示重量',
+                                    }.entries)
+                                      DropdownMenuItem(
+                                        value: b.key,
+                                        child: Text(b.value),
+                                      ),
+                                  ],
+                                  onChanged: locked
+                                      ? null
+                                      : (v) {
+                                          setState(() => e.loadBasis = v!);
+                                          changed();
+                                        },
+                                ),
+                                input('不适部位（可选）', e.discomfort, text: true),
+                                const Text('更换器械或口径后不会直接据此加重。'),
+                              ],
+                            ),
+                            DropdownButtonFormField<int>(
+                              initialValue: e.group,
+                              decoration: const InputDecoration(
+                                labelText: '执行编排',
+                              ),
+                              items: [
+                                const DropdownMenuItem(
+                                  value: 0,
+                                  child: Text('普通组，逐动作执行'),
+                                ),
+                                for (var g = 1; g <= 5; g++)
+                                  DropdownMenuItem(
+                                    value: g,
+                                    child: Text('交替组 $g（同组2–4个动作轮流）'),
+                                  ),
+                              ],
+                              onChanged: locked
+                                  ? null
+                                  : (v) {
+                                      setState(() => e.group = v!);
+                                      changed();
+                                    },
+                            ),
                             if (e.detectedReps != null)
                               Text(
                                 '实时实验计次共 ${e.detectedReps} 次，请逐组自行确认实际次数；不代表动作质量。',
@@ -674,6 +991,48 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                                         );
                                         changed();
                                       },
+                              ),
+                              ExpansionTile(
+                                tilePadding: EdgeInsets.zero,
+                                title: Text(
+                                  '${e.sets[i].setType == 'warmup' ? '热身组' : '工作组'}${e.sets[i].assisted ? ' · 有辅助' : ''} · 组细节',
+                                ),
+                                children: [
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: const Text('这是热身组'),
+                                    value: e.sets[i].setType == 'warmup',
+                                    onChanged: locked
+                                        ? null
+                                        : (v) {
+                                            setState(
+                                              () => e.sets[i].setType = v
+                                                  ? 'warmup'
+                                                  : 'working',
+                                            );
+                                            changed();
+                                          },
+                                  ),
+                                  CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: const Text('本组有他人辅助完成'),
+                                    value: e.sets[i].assisted,
+                                    onChanged: locked
+                                        ? null
+                                        : (v) {
+                                            setState(
+                                              () => e.sets[i].assisted =
+                                                  v == true,
+                                            );
+                                            changed();
+                                          },
+                                  ),
+                                  input('实际组间休息 / 秒（可选）', e.sets[i].rest),
+                                  input(
+                                    '完成后还能做几次 / RIR 0–10（可选）',
+                                    e.sets[i].rir,
+                                  ),
+                                ],
                               ),
                             ],
                             TextButton.icon(

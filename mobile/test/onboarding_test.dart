@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liftlab/fitness_onboarding.dart';
 
+import 'fixtures/strength_profile.dart';
+
 void main() {
   testWidgets(
     'profile save automatically generates a draft and requires confirmation',
@@ -34,6 +36,7 @@ void main() {
           return {'required': true, 'facts': facts, 'step': 'profile'};
         }
         if (path == '/rm') return [];
+        if (path == '/strength-profile') return strengthFixture();
         if (path == '/coach/profile') {
           submittedProfile = Map<String, dynamic>.from(body as Map);
           return {};
@@ -58,7 +61,7 @@ void main() {
                 'exercises': [
                   {
                     'exercise_id': 'bench',
-                    'weight_kg': null,
+                    'weight_kg': 50,
                     'sets': 3,
                     'reps': 5,
                     'rest_seconds': 120,

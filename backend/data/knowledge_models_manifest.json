@@ -1,0 +1,45 @@
+{
+  "version": "retrieval-models-20261022-v1",
+  "embedding": {
+    "id": "bge-small-zh-v1.5-onnx-int8",
+    "upstream": "BAAI/bge-small-zh-v1.5",
+    "repository": "Xenova/bge-small-zh-v1.5",
+    "revision": "75c43b069aac4d136ba6bc1122f995fedcfd2781",
+    "license": "MIT",
+    "pooling": "cls",
+    "dimensions": 512,
+    "query_prefix": "为这个句子生成表示以用于检索相关文章：",
+    "files": {
+      "model.onnx": {
+        "remote": "onnx/model_quantized.onnx",
+        "sha256": "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+        "size": 24010842
+      },
+      "tokenizer.json": {
+        "remote": "tokenizer.json",
+        "sha256": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+        "size": 439125
+      }
+    }
+  },
+  "reranker": {
+    "id": "bge-reranker-base-onnx-int8",
+    "upstream": "BAAI/bge-reranker-base",
+    "repository": "Xenova/bge-reranker-base",
+    "revision": "280bcc27a84e0b898c251e06fddb25171bd9b101",
+    "license": "MIT",
+    "files": {
+      "model.onnx": {
+        "remote": "onnx/model_quantized.onnx",
+        "sha256": "dd98f3e67837d23210a6b7550c08cced4f61845b940ac45be3565840a10f3244",
+        "size": 279301077
+      },
+      "tokenizer.json": {
+        "remote": "tokenizer.json",
+        "sha256": "48564c5c7d3fa64d85d95e65414a542385f88b0f128fd8d4163fd7a57f2be05c",
+        "size": 17098079
+      }
+    }
+  },
+  "notes": "CPU部署配置；不宣称为全球SOTA模型。ONNX为固定版本转换件，不加载远程代码；模型与tokenizer须校验哈希。更大模型必须在同一项目题集与资源预算下比较后启用。"
+}

@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+try:
+    from . import exercise_taxonomy, external_exercises
+except ImportError:
+    import exercise_taxonomy, external_exercises
 
 DATA = json.loads((Path(__file__).parent / 'data/exercise_content.json').read_text(encoding='utf-8'))
 
@@ -39,6 +43,7 @@ class Technique(BaseModel):
 
 def enrich(entry):
     result = copy.deepcopy(entry)
+    external_exercises.localize(result)
     default = DATA.get(entry['id'], {})
     for key, value in default.items():
         if key not in result or result[key] is None:
@@ -51,6 +56,26 @@ def enrich(entry):
     result.setdefault('technique', Technique().model_dump())
     result['technique'] = Technique.model_validate(result['technique']).model_dump()
     result.setdefault('content_version', 'user-draft-1')
+    external_exercises.legacy_overlay(result)
+    if not result.get('joint_action_ids'):
+        patterns={'水平推':['shoulder_horizontal_adduction','elbow_extension'],
+            '垂直推':['shoulder_flexion','elbow_extension'], '水平拉':['shoulder_extension','elbow_flexion'],
+            '垂直拉':['shoulder_adduction','elbow_flexion'],'蹲：髋膝屈伸':['hip_extension','knee_extension','ankle_dorsiflexion'],
+            '髋铰链：髋屈伸':['hip_extension'],'髋伸展':['hip_extension'],
+            '分腿：髋膝屈伸':['hip_extension','knee_extension'],'肩水平内收':['shoulder_horizontal_adduction'],
+            '肩外展':['shoulder_abduction'],'肩水平外展与外旋':['shoulder_horizontal_abduction','shoulder_rotation'],
+            '肘屈曲':['elbow_flexion'],'肘伸展':['elbow_extension'],'膝伸展':['knee_extension'],
+            '膝屈曲':['knee_flexion'],'踝跖屈':['ankle_plantarflexion'],
+            '核心抗伸展':['trunk_stability'],'核心抗侧屈':['trunk_stability']}
+        ids=patterns.get(result['movement_pattern'])
+        if ids:
+            result['joint_action_ids']=ids
+            result['joint_action_categories']=[exercise_taxonomy.GROUPS[k][0] for k in ids]
+        else:
+            inferred=exercise_taxonomy.classify(result.get('original_name',result['name']))
+            result['joint_action_ids']=inferred['joint_action_ids']
+            result['joint_action_categories']=inferred['joint_action_categories']
+            result.setdefault('classification',inferred['classification'])
     return result
 
 SYSTEM_PROMPT = '''你是中文训练动作观察助手，分析用户提供的真实训练画面。
@@ -68,8 +93,9 @@ SYSTEM_PROMPT = '''你是中文训练动作观察助手，分析用户提供的�
 def analysis_context(entry, view='unknown', frame_count=0):
     enriched = enrich(entry)
     fields = ('id', 'name', 'type', 'equipment', 'movement_pattern', 'joint_actions',
-              'body_regions', 'primary_muscles', 'secondary_muscles', 'technique', 'content_version')
-    reference = {key: enriched[key] for key in fields}
+              'body_regions', 'primary_muscles', 'secondary_muscles', 'technique', 'content_version',
+              'joint_action_categories','classification','upstream_refs')
+    reference = {key: enriched[key] for key in fields if key in enriched}
     digest = hashlib.sha256(json.dumps(reference, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     cues = reference['technique']['common_errors']
     allowed = [c['id'] for c in cues if c.get('usage') != 'reference_only' and c['observability'] != 'not_visible'

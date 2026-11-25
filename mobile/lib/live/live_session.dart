@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 import 'coaching_engine.dart';
+import 'motion_evidence_panel.dart';
+import 'motion_replay.dart';
+import 'motion_replay_page.dart';
 import '../exercise_reference.dart';
 
 class LiveSession extends StatefulWidget {
@@ -29,6 +33,8 @@ class LiveSession extends StatefulWidget {
 class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
   late CaptureGuide guide;
   late CoachingEngine engine;
+  late MotionTrace trace;
+  bool traceViewConfirmed = false;
   final tts = FlutterTts();
   final gate = CueGate();
   CameraController? camera;
@@ -44,6 +50,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
   String status = '点击开启相机，按示意框摆放支架';
   String? failure;
   int generation = 0;
+  int motionGeneration = 0;
   final completedSets = <int>[];
   int? trainingStarted;
   bool finishing = false;
@@ -60,6 +67,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
     super.initState();
     guide = CaptureGuide.all.firstWhere((g) => g.id == widget.exerciseId);
     engine = CoachingEngine(guide);
+    trace = MotionTrace(widget.exerciseId);
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -167,30 +175,43 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
     lastFrame = clock.elapsedMilliseconds;
     processing = true;
     final token = generation;
+    final motionToken = motionGeneration;
     final started = clock.elapsedMilliseconds;
     try {
       final input = inputImage(image, c);
       if (input == null) {
+        final result = engine.reject(
+          'unsupported_format',
+          started,
+          active: running,
+        );
+        trace.add(
+          ReplayFrame(
+            started,
+            1,
+            running,
+            0,
+            0,
+            {},
+            externalReason: 'unsupported_format',
+          ),
+        );
         if (mounted) {
           setState(() {
             ready = false;
-            running = false;
-            status = '设备帧格式不支持，请结束后更换设备测试';
+            status = result.message;
           });
         }
         return;
       }
       final poses = await detector!.processImage(input);
-      if (!mounted || closing || token != generation) return;
-      if (clock.elapsedMilliseconds - started > 500) {
-        engine.resetMotion();
-        engine.validSince = null;
-        setState(() {
-          ready = false;
-          status = '检测延迟过高，暂停判断；请在本组结束后检查设备';
-        });
+      if (!mounted ||
+          closing ||
+          token != generation ||
+          motionToken != motionGeneration) {
         return;
       }
+      final detectionMs = clock.elapsedMilliseconds - started;
       final rotated =
           c.description.sensorOrientation == 90 ||
           c.description.sensorOrientation == 270;
@@ -217,21 +238,43 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
         active: running,
         aspect: w / h,
         tempoFeedback: tempo,
+        poseCount: poses.length,
+        detectionMs: detectionMs,
+      );
+      trace.add(
+        ReplayFrame(started, w / h, running, poses.length, detectionMs, points),
       );
       setState(() {
         ready = result.ready;
         status = result.message;
         reps = result.reps;
-        latency = clock.elapsedMilliseconds - started;
+        latency = detectionMs;
       });
       if (running && result.cue != null) {
         unawaited(speak(result.cue!, repetition: true));
       }
       if (running && !result.ready) {
-        unawaited(speak('画面暂时不可用，已暂停判断。请在本组结束后检查机位'));
+        if (result.reason != 'stabilizing') {
+          unawaited(speak('画面暂时不可用，已暂停判断。请在本组结束后查看拒判原因'));
+        }
       }
     } catch (e) {
-      if (mounted && !closing) {
+      if (mounted &&
+          !closing &&
+          token == generation &&
+          motionToken == motionGeneration) {
+        engine.reject('inference_error', started, active: running);
+        trace.add(
+          ReplayFrame(
+            started,
+            1,
+            running,
+            0,
+            0,
+            {},
+            externalReason: 'inference_error',
+          ),
+        );
         setState(() {
           ready = false;
           running = false;
@@ -245,6 +288,14 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
 
   Future<void> releaseCamera() async {
     generation++;
+    motionGeneration++;
+    if (running) {
+      final timestamp = clock.elapsedMilliseconds;
+      engine.reject('paused', timestamp, active: true);
+      trace.add(
+        ReplayFrame(timestamp, 1, true, 0, 0, {}, externalReason: 'paused'),
+      );
+    }
     running = false;
     ready = false;
     angleConfirmed = false;
@@ -288,6 +339,7 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     await detector?.close();
+    trace.clear();
     if (native) {
       await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     }
@@ -384,6 +436,91 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
         const SizedBox(height: 12),
         Text(status),
         Text('本次已结束 ${completedSets.length} 组检测；完成训练后需确认并保存实际组次。'),
+        const SizedBox(height: 12),
+        MotionEvidencePanel(
+          evidence: engine.evidence,
+          dropped: engine.droppedEvidence,
+        ),
+        OutlinedButton.icon(
+          onPressed: running
+              ? null
+              : () async {
+                  await releaseCamera();
+                  trace.clear();
+                  traceViewConfirmed = false;
+                  if (!context.mounted) return;
+                  setState(() {});
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          MotionReplayPage(exerciseId: widget.exerciseId),
+                    ),
+                  );
+                },
+          icon: const Icon(Icons.fact_check_outlined),
+          label: const Text('证据回放与双人标注'),
+        ),
+        SwitchListTile(
+          title: const Text('仅在本页缓存关键点，供本人回放'),
+          subtitle: const Text(
+            '默认关闭；不含视频/音频，不上传、不交给AI。离页清除；关闭立即清除。最多6000帧或约4MB，满后停止采集。',
+          ),
+          value: trace.enabled,
+          onChanged: running && !trace.enabled
+              ? null
+              : (v) => setState(() {
+                  trace.clear();
+                  traceViewConfirmed = false;
+                  trace.enabled = v;
+                  if (v) {
+                    // A replay must include its own warm-up, not hidden old state.
+                    engine.resetMotion();
+                    engine.validSince = null;
+                    engine.lastTimestamp = null;
+                    engine.side = null;
+                    ready = false;
+                    status = '关键点缓存已开启，请重新稳定入框';
+                  }
+                }),
+        ),
+        if (trace.full) const Text('关键点缓存已满，采集已停止。已有证据仍可查看。'),
+        if (trace.failure != null) Text(trace.failure!),
+        if (trace.frames.isNotEmpty)
+          TextButton(
+            onPressed: () => setState(() {
+              trace.clear();
+              traceViewConfirmed = false;
+            }),
+            child: const Text('清除本地关键点缓存'),
+          ),
+        if (trace.frames.isNotEmpty)
+          OutlinedButton(
+            onPressed: running
+                ? null
+                : () => showDialog<void>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('本人的本地关键点JSON'),
+                      content: SizedBox(
+                        width: 650,
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            jsonEncode(
+                              trace.toJson(viewConfirmed: traceViewConfirmed),
+                            ),
+                          ),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('关闭'),
+                        ),
+                      ],
+                    ),
+                  ),
+            child: Text('查看本地轨迹JSON（${trace.frames.length}帧）'),
+          ),
         if (!native) const Text('Web 当前展示拍摄模板；实时姿态检测需在 Android / iOS 客户端运行。'),
         if (failure != null)
           Text(failure!, style: const TextStyle(color: Colors.red)),
@@ -441,6 +578,8 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
               ? null
               : () {
                   engine.startSet();
+                  motionGeneration++;
+                  if (trace.enabled) traceViewConfirmed = true;
                   trainingStarted ??= clock.elapsedMilliseconds;
                   setState(() {
                     running = true;
@@ -454,6 +593,10 @@ class _LiveSessionState extends State<LiveSession> with WidgetsBindingObserver {
           onPressed: !running
               ? null
               : () {
+                  motionGeneration++;
+                  final timestamp = clock.elapsedMilliseconds;
+                  engine.endSet(timestamp);
+                  trace.add(ReplayFrame(timestamp, 1, false, 0, 0, {}));
                   setState(() {
                     running = false;
                     completedSets.add(reps);

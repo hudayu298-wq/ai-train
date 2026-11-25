@@ -1,5 +1,8 @@
 """SQLAlchemy storage. Private records always require an authenticated owner."""
 import os
+import json
+from copy import deepcopy
+from uuid import uuid4
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -84,6 +87,34 @@ catalog = Table('catalog_items_v2', metadata,
     Column('active', Boolean, nullable=False, default=True),
     Column('sort_order', Integer, nullable=False, default=0),
     Column('payload', document, nullable=False))
+measurements = Table('health_measurements', metadata,
+    Column('id', String(36), primary_key=True),
+    Column('user_id', ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+    Column('metric', String(40), nullable=False),
+    Column('provider', String(60), nullable=False),
+    Column('external_id', String(120), nullable=False),
+    Column('observed_at', DateTime(timezone=True), nullable=False),
+    Column('source_updated_at', DateTime(timezone=True), nullable=False),
+    Column('payload', document, nullable=False),
+    UniqueConstraint('user_id', 'provider', 'external_id'),
+    Index('health_measurements_owner_metric_time', 'user_id', 'metric', 'observed_at'))
+research_records = Table('research_records', metadata,
+    Column('kind', String(30), primary_key=True), Column('id', String(100), primary_key=True),
+    Column('status', String(30), nullable=False),
+    Column('updated_at', DateTime(timezone=True), nullable=False),
+    Column('payload', document, nullable=False),
+    Index('research_records_kind_status', 'kind', 'status'))
+knowledge_chunks = Table('knowledge_chunks', metadata,
+    Column('id', String(64), primary_key=True),
+    Column('bundle_hash', String(64), nullable=False),
+    Column('model_hash', String(64), nullable=False),
+    Column('item_id', String(80), nullable=False),
+    Column('chunk_key', String(160), nullable=False),
+    Column('content', String, nullable=False),
+    Column('content_hash', String(64), nullable=False),
+    Column('embedding', document, nullable=False),
+    Column('payload', document, nullable=False),
+    Index('knowledge_chunks_bundle_model', 'bundle_hash', 'model_hash'))
 engines = {}
 
 
@@ -130,6 +161,49 @@ def get_engine(path=None):
 class Store:
     def __init__(self, conn):
         self.conn = conn
+        self._private_dirty = False
+        self._memo = {}
+        self._purges = set()
+
+    def invalidate_private_cache(self):
+        """Epoch and business mutation commit/rollback together; Redis is optional."""
+        try:from .services import cache
+        except ImportError:from services import cache
+        self._private_dirty = True
+        self._memo.clear()
+        self._purges.add((cache.database_scope(self.conn.engine.url),owner()))
+        stmt=dialect_insert(self.conn,records_table).values(user_id=owner(),kind='cache_meta',id='redis_epoch',payload={'nonce':uuid4().hex})
+        self.conn.execute(stmt.on_conflict_do_update(index_elements=['user_id','kind','id'],set_={'payload':stmt.excluded.payload}))
+
+    def cached_user(self, name, parameters, loader):
+        try:from .services import cache
+        except ImportError:from services import cache
+        # Always read current SQL access/epoch, including on a Redis/local hit.
+        joined=users.outerjoin(records_table,(records_table.c.user_id==users.c.id)&
+            (records_table.c.kind=='cache_meta')&(records_table.c.id=='redis_epoch'))
+        state=self.conn.execute(select(users.c.active,records_table.c.payload).select_from(joined).where(users.c.id==owner())).mappings().first()
+        if not state or not state['active']:raise HTTPException(401,'账号已停用，请重新登录')
+        memo_key=(owner(),name,json.dumps(parameters,sort_keys=True))
+        if memo_key in self._memo:return deepcopy(self._memo[memo_key])
+        epoch=(state['payload'] or {}).get('nonce')
+        if cache.enabled() and not epoch:
+            self.lock_user()
+            self.invalidate_private_cache()
+        prefix=cache.owner_prefix(cache.database_scope(self.conn.engine.url),owner()) if cache.enabled() else ''
+        key=prefix+':data:'+cache.digest([epoch,name,parameters]) if prefix and epoch else ''
+        value,hit=cache.get(key,epoch=epoch) if key and not self._private_dirty else (None,False)
+        if not hit:
+            value=loader()
+            # Never put uncommitted business changes or a newly initialized epoch
+            # into Redis; next transaction may safely fill it after commit.
+            if key and not self._private_dirty:cache.put(key,value,120,epoch=epoch,owner_index=prefix+':index')
+        self._memo[memo_key]=deepcopy(value)
+        return deepcopy(value)
+
+    def clear_committed_cache(self):
+        try:from .services import cache
+        except ImportError:from services import cache
+        for scope,uid in self._purges:cache.purge_private(scope,uid)
 
     def lock_user(self):
         # Serializes a user's atomic profile/chat/workout updates, including deletion.
@@ -137,6 +211,9 @@ class Store:
             users.c.id == owner(), users.c.active.is_(True)).with_for_update()).first()
         if not row:
             raise HTTPException(401, '账号已停用，请重新登录')
+        try:from .services import privacy
+        except ImportError:from services import privacy
+        privacy.check_guard(self)
         sid = session_context.get()
         if sid:
             session = self.conn.execute(select(sessions).where(
@@ -158,6 +235,8 @@ class Store:
 
     def write(self, kind, key, payload, replace=True):
         self.lock_user()
+        if kind in ('profile','coach_profile','workout','training','health_settings','mobility_settings','nutrition_settings'):
+            self.invalidate_private_cache()
         values = dict(user_id=owner(), kind=kind, id=key, payload=payload)
         statement = dialect_insert(self.conn, records_table).values(**values)
         if replace:
@@ -167,6 +246,8 @@ class Store:
 
     def remove(self, kind, key):
         self.lock_user()
+        if kind in ('profile','coach_profile','workout','training','health_settings','mobility_settings','nutrition_settings'):
+            self.invalidate_private_cache()
         return self.conn.execute(delete(records_table).where(records_table.c.user_id == owner(),
             records_table.c.kind == kind, records_table.c.id == key)).rowcount
 
@@ -185,6 +266,15 @@ class Store:
             statement = statement.on_conflict_do_nothing(index_elements=['kind', 'id'])
         self.conn.execute(statement)
 
+    def catalog_seed(self,kind,entries):
+        # Fixed batches stay below conservative SQLite bind-parameter limits.
+        # Existing edits and archived entries win over the immutable seed.
+        for offset in range(0,len(entries),100):
+            values=[dict(kind=kind,id=p['id'],name=p['name'],category=p['category'],
+                active=True,sort_order=offset+i,payload=p) for i,p in enumerate(entries[offset:offset+100])]
+            statement=dialect_insert(self.conn,catalog).values(values)
+            self.conn.execute(statement.on_conflict_do_nothing(index_elements=['kind','id']))
+
     def catalog_update(self, kind, key, **values):
         return self.conn.execute(update(catalog).where(catalog.c.kind == kind,
             catalog.c.id == key, catalog.c.active.is_(True)).values(**values)).rowcount
@@ -201,4 +291,6 @@ def dialect_insert(conn, table):
 @contextmanager
 def connection(path=None):
     with get_engine(path).begin() as conn:
-        yield Store(conn)
+        store=Store(conn)
+        yield store
+    store.clear_committed_cache()

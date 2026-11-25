@@ -1,0 +1,2699 @@
+{
+  "version": "foundation-20261022-v1",
+  "name": "练伴基础知识：三大项、解剖与饮食",
+  "sources": [
+    {
+      "id": "uams-upper",
+      "title": "UAMS 上肢肌肉解剖表",
+      "url": "https://medicine.uams.edu/neuroscience/education/medical-school-courses/human-structure-module/anatomy-tables/muscle-tables/muscles-of-the-upper-limb/",
+      "edition": "在线资料，2026-10-22核对",
+      "section": "按肌肉英文名定位",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "uams-lower",
+      "title": "UAMS 下肢肌肉解剖表",
+      "url": "https://medicine.uams.edu/neuroscience/education/medical-school-courses/human-structure-module/anatomy-tables/muscle-tables/muscles-of-the-lower-limb/",
+      "edition": "在线资料，2026-10-22核对",
+      "section": "按肌肉英文名定位",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "openstax-movement",
+      "title": "OpenStax Anatomy and Physiology 2e",
+      "url": "https://openstax.org/books/anatomy-and-physiology-2e/pages/9-5-types-of-body-movements",
+      "edition": "2e",
+      "section": "9.5 Types of Body Movements",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "openstax-joints",
+      "title": "OpenStax Anatomy and Physiology 2e：滑膜关节",
+      "url": "https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints",
+      "edition": "2e",
+      "section": "9.6 Anatomy of Selected Synovial Joints",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "acsm-2026",
+      "title": "ACSM 2026 抗阻训练立场更新说明",
+      "url": "https://acsm.org/resistance-training-guidelines-update-2026/",
+      "edition": "在线资料，2026-10-22核对",
+      "section": "Consistency Over Complexity / Individualization",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "who-diet",
+      "title": "WHO Healthy diet",
+      "url": "https://www.who.int/en/news-room/fact-sheets/detail/healthy-diet",
+      "edition": "2026-01-26",
+      "section": "Overview / Practical advice",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "usda-fdc",
+      "title": "USDA FoodData Central 数据说明",
+      "url": "https://fdc.nal.usda.gov/data-documentation/",
+      "edition": "在线资料，2026-10-22核对",
+      "section": "Data types / Food descriptions",
+      "accessed_on": "2026-10-22",
+      "content_use": "paraphrased_facts",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    },
+    {
+      "id": "lianban-policy",
+      "title": "练伴产品约束与动作说明",
+      "url": "https://github.com/hudayu298-wq/ai-train",
+      "edition": "foundation-20261022-v1",
+      "section": "backend/exercise_content.py、backend/progression.py、backend/services/knowledge_seed.py",
+      "accessed_on": "2026-10-22",
+      "content_use": "product_policy",
+      "licensing_note": "仅整理事实并用中文概述，未复制原表、插图或整段正文；来源链接供核对。"
+    }
+  ],
+  "items": [
+    {
+      "id": "shoulder_flexion",
+      "kind": "joint_action",
+      "title": "肩屈曲",
+      "aliases": [
+        "shoulder flexion"
+      ],
+      "summary": "上臂向前抬起；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "sagittal",
+        "definition": "上臂向前抬起",
+        "opposite_id": "shoulder_extension"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩屈曲"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder_extension",
+      "kind": "joint_action",
+      "title": "肩伸展",
+      "aliases": [
+        "shoulder extension"
+      ],
+      "summary": "上臂向后移动；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "sagittal",
+        "definition": "上臂向后移动",
+        "opposite_id": "shoulder_flexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩伸展"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder_horizontal_adduction",
+      "kind": "joint_action",
+      "title": "肩水平内收",
+      "aliases": [
+        "shoulder horizontal adduction"
+      ],
+      "summary": "抬起的上臂向身体前方中线靠近；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "transverse",
+        "definition": "抬起的上臂向身体前方中线靠近",
+        "opposite_id": "shoulder_horizontal_abduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩水平内收"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder_horizontal_abduction",
+      "kind": "joint_action",
+      "title": "肩水平外展",
+      "aliases": [
+        "shoulder horizontal abduction"
+      ],
+      "summary": "抬起的上臂离开身体前方中线；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "transverse",
+        "definition": "抬起的上臂离开身体前方中线",
+        "opposite_id": "shoulder_horizontal_adduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩水平外展"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder_abduction",
+      "kind": "joint_action",
+      "title": "肩外展",
+      "aliases": [
+        "shoulder abduction"
+      ],
+      "summary": "上臂向身体侧方抬起；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "frontal",
+        "definition": "上臂向身体侧方抬起",
+        "opposite_id": "shoulder_adduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩外展"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder_adduction",
+      "kind": "joint_action",
+      "title": "肩内收",
+      "aliases": [
+        "shoulder adduction"
+      ],
+      "summary": "上臂向躯干靠近；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "shoulder",
+        "plane": "frontal",
+        "definition": "上臂向躯干靠近",
+        "opposite_id": "shoulder_abduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：肩内收"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "elbow_flexion",
+      "kind": "joint_action",
+      "title": "屈肘",
+      "aliases": [
+        "elbow flexion"
+      ],
+      "summary": "前臂与上臂夹角减小；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "elbow",
+        "plane": "sagittal",
+        "definition": "前臂与上臂夹角减小",
+        "opposite_id": "elbow_extension"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：屈肘"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "elbow_extension",
+      "kind": "joint_action",
+      "title": "伸肘",
+      "aliases": [
+        "elbow extension"
+      ],
+      "summary": "前臂与上臂夹角增大；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "elbow",
+        "plane": "sagittal",
+        "definition": "前臂与上臂夹角增大",
+        "opposite_id": "elbow_flexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：伸肘"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "hip_flexion",
+      "kind": "joint_action",
+      "title": "屈髋",
+      "aliases": [
+        "hip flexion"
+      ],
+      "summary": "大腿与躯干前方靠近；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "hip",
+        "plane": "sagittal",
+        "definition": "大腿与躯干前方靠近",
+        "opposite_id": "hip_extension"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：屈髋"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "hip_extension",
+      "kind": "joint_action",
+      "title": "伸髋",
+      "aliases": [
+        "hip extension"
+      ],
+      "summary": "由屈髋位向伸直方向移动；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "hip",
+        "plane": "sagittal",
+        "definition": "由屈髋位向伸直方向移动",
+        "opposite_id": "hip_flexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：伸髋"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "hip_abduction",
+      "kind": "joint_action",
+      "title": "髋外展",
+      "aliases": [
+        "hip abduction"
+      ],
+      "summary": "大腿离开身体中线；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "hip",
+        "plane": "frontal",
+        "definition": "大腿离开身体中线",
+        "opposite_id": "hip_adduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：髋外展"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "hip_adduction",
+      "kind": "joint_action",
+      "title": "髋内收",
+      "aliases": [
+        "hip adduction"
+      ],
+      "summary": "大腿向身体中线靠近；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "hip",
+        "plane": "frontal",
+        "definition": "大腿向身体中线靠近",
+        "opposite_id": "hip_abduction"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：髋内收"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "knee_flexion",
+      "kind": "joint_action",
+      "title": "屈膝",
+      "aliases": [
+        "knee flexion"
+      ],
+      "summary": "膝后方夹角减小；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "knee",
+        "plane": "sagittal",
+        "definition": "膝后方夹角减小",
+        "opposite_id": "knee_extension"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：屈膝"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "knee_extension",
+      "kind": "joint_action",
+      "title": "伸膝",
+      "aliases": [
+        "knee extension"
+      ],
+      "summary": "膝从弯曲向伸直移动；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "knee",
+        "plane": "sagittal",
+        "definition": "膝从弯曲向伸直移动",
+        "opposite_id": "knee_flexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：伸膝"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "ankle_dorsiflexion",
+      "kind": "joint_action",
+      "title": "踝背屈",
+      "aliases": [
+        "ankle dorsiflexion"
+      ],
+      "summary": "足背向小腿前方靠近；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "ankle",
+        "plane": "sagittal",
+        "definition": "足背向小腿前方靠近",
+        "opposite_id": "ankle_plantarflexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：踝背屈"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "ankle_plantarflexion",
+      "kind": "joint_action",
+      "title": "踝跖屈",
+      "aliases": [
+        "ankle plantarflexion"
+      ],
+      "summary": "足尖朝远离小腿前方的方向移动；负重动作中还需区分向心、离心和稳定作用。",
+      "facts": {
+        "joint_id": "ankle",
+        "plane": "sagittal",
+        "definition": "足尖朝远离小腿前方的方向移动",
+        "opposite_id": "ankle_dorsiflexion"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：踝跖屈"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "shoulder",
+      "kind": "joint",
+      "title": "盂肱关节",
+      "aliases": [
+        "shoulder"
+      ],
+      "summary": "盂肱关节的动作名称用于关联肌肉与训练动作，不给出统一合格角度。",
+      "facts": {
+        "joint_type": "球窝关节",
+        "action_ids": [
+          "shoulder_flexion",
+          "shoulder_extension",
+          "shoulder_horizontal_adduction",
+          "shoulder_horizontal_abduction",
+          "shoulder_abduction",
+          "shoulder_adduction"
+        ],
+        "rom_reference": "本库未建立个体活动度测量协议或常模；需要结合姿势、方法和个体测量。",
+        "use_as_video_threshold": false
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-joints",
+          "locator": "9.6：盂肱关节"
+        },
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：对应关节动作"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "elbow",
+      "kind": "joint",
+      "title": "肘关节",
+      "aliases": [
+        "elbow"
+      ],
+      "summary": "肘关节的动作名称用于关联肌肉与训练动作，不给出统一合格角度。",
+      "facts": {
+        "joint_type": "以屈伸为主的复合关节",
+        "action_ids": [
+          "elbow_flexion",
+          "elbow_extension"
+        ],
+        "rom_reference": "本库未建立个体活动度测量协议或常模；需要结合姿势、方法和个体测量。",
+        "use_as_video_threshold": false
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-joints",
+          "locator": "9.6：肘关节"
+        },
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：对应关节动作"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "hip",
+      "kind": "joint",
+      "title": "髋关节",
+      "aliases": [
+        "hip"
+      ],
+      "summary": "髋关节的动作名称用于关联肌肉与训练动作，不给出统一合格角度。",
+      "facts": {
+        "joint_type": "球窝关节",
+        "action_ids": [
+          "hip_flexion",
+          "hip_extension",
+          "hip_abduction",
+          "hip_adduction"
+        ],
+        "rom_reference": "本库未建立个体活动度测量协议或常模；需要结合姿势、方法和个体测量。",
+        "use_as_video_threshold": false
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-joints",
+          "locator": "9.6：髋关节"
+        },
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：对应关节动作"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "knee",
+      "kind": "joint",
+      "title": "膝关节",
+      "aliases": [
+        "knee"
+      ],
+      "summary": "膝关节的动作名称用于关联肌肉与训练动作，不给出统一合格角度。",
+      "facts": {
+        "joint_type": "改良铰链关节",
+        "action_ids": [
+          "knee_flexion",
+          "knee_extension"
+        ],
+        "rom_reference": "本库未建立个体活动度测量协议或常模；需要结合姿势、方法和个体测量。",
+        "use_as_video_threshold": false
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-joints",
+          "locator": "9.6：膝关节"
+        },
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：对应关节动作"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "ankle",
+      "kind": "joint",
+      "title": "距小腿关节",
+      "aliases": [
+        "ankle"
+      ],
+      "summary": "距小腿关节的动作名称用于关联肌肉与训练动作，不给出统一合格角度。",
+      "facts": {
+        "joint_type": "以背屈跖屈为主的铰链关节",
+        "action_ids": [
+          "ankle_dorsiflexion",
+          "ankle_plantarflexion"
+        ],
+        "rom_reference": "本库未建立个体活动度测量协议或常模；需要结合姿势、方法和个体测量。",
+        "use_as_video_threshold": false
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "openstax-joints",
+          "locator": "9.6：距小腿关节"
+        },
+        {
+          "source_id": "openstax-movement",
+          "locator": "9.5：对应关节动作"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "pectoralis_major",
+      "kind": "muscle",
+      "title": "胸大肌",
+      "aliases": [
+        "pectoralis major"
+      ],
+      "summary": "胸大肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "锁骨内侧段、胸骨及上部肋软骨等"
+        ],
+        "insertion": [
+          "肱骨结节间沟外侧唇"
+        ],
+        "joint_ids": [
+          "shoulder"
+        ],
+        "action_ids": [
+          "shoulder_horizontal_adduction",
+          "shoulder_adduction",
+          "shoulder_flexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": [
+          "锁骨部与胸肋部的作用随肩位变化。"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-upper",
+          "locator": "pectoralis major"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "deltoid",
+      "kind": "muscle",
+      "title": "三角肌",
+      "aliases": [
+        "deltoid"
+      ],
+      "summary": "三角肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "锁骨外侧段、肩峰、肩胛冈"
+        ],
+        "insertion": [
+          "肱骨三角肌粗隆"
+        ],
+        "joint_ids": [
+          "shoulder"
+        ],
+        "action_ids": [
+          "shoulder_abduction",
+          "shoulder_flexion",
+          "shoulder_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": [
+          "前束参与屈肩，中束参与外展，后束参与伸肩；并非每束都完成全部列出作用。"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-upper",
+          "locator": "deltoid"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "triceps",
+      "kind": "muscle",
+      "title": "肱三头肌",
+      "aliases": [
+        "triceps brachii"
+      ],
+      "summary": "肱三头肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "长头起于肩胛骨盂下结节；另两头起于肱骨后面"
+        ],
+        "insertion": [
+          "尺骨鹰嘴"
+        ],
+        "joint_ids": [
+          "shoulder",
+          "elbow"
+        ],
+        "action_ids": [
+          "elbow_extension",
+          "shoulder_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": [
+          "只有长头跨肩关节；不能把三头都当成双关节肌。"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-upper",
+          "locator": "triceps brachii"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "latissimus",
+      "kind": "muscle",
+      "title": "背阔肌",
+      "aliases": [
+        "latissimus dorsi"
+      ],
+      "summary": "背阔肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "下胸椎棘突、胸腰筋膜、髂嵴及下部肋骨等"
+        ],
+        "insertion": [
+          "肱骨结节间沟底"
+        ],
+        "joint_ids": [
+          "shoulder"
+        ],
+        "action_ids": [
+          "shoulder_extension",
+          "shoulder_adduction"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-upper",
+          "locator": "latissimus dorsi"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "gluteus_maximus",
+      "kind": "muscle",
+      "title": "臀大肌",
+      "aliases": [
+        "gluteus maximus"
+      ],
+      "summary": "臀大肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "髂骨后部、骶尾骨及骶结节韧带等"
+        ],
+        "insertion": [
+          "髂胫束及股骨臀肌粗隆"
+        ],
+        "joint_ids": [
+          "hip"
+        ],
+        "action_ids": [
+          "hip_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "gluteus maximus"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "gluteus_medius",
+      "kind": "muscle",
+      "title": "臀中肌",
+      "aliases": [
+        "gluteus medius"
+      ],
+      "summary": "臀中肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "髂骨外侧面"
+        ],
+        "insertion": [
+          "股骨大转子"
+        ],
+        "joint_ids": [
+          "hip"
+        ],
+        "action_ids": [
+          "hip_abduction"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "gluteus medius"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "rectus_femoris",
+      "kind": "muscle",
+      "title": "股直肌",
+      "aliases": [
+        "rectus femoris",
+        "股四头肌"
+      ],
+      "summary": "股直肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "髂前下棘及髋臼上缘附近"
+        ],
+        "insertion": [
+          "经股四头肌腱至髌骨，再经髌韧带至胫骨粗隆"
+        ],
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_flexion",
+          "knee_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "rectus femoris"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "vastus_lateralis",
+      "kind": "muscle",
+      "title": "股外侧肌",
+      "aliases": [
+        "vastus lateralis",
+        "股四头肌"
+      ],
+      "summary": "股外侧肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "股骨大转子及粗线外侧区域等"
+        ],
+        "insertion": [
+          "经股四头肌腱、髌骨和髌韧带至胫骨粗隆"
+        ],
+        "joint_ids": [
+          "knee"
+        ],
+        "action_ids": [
+          "knee_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "vastus lateralis"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "vastus_medialis",
+      "kind": "muscle",
+      "title": "股内侧肌",
+      "aliases": [
+        "vastus medialis",
+        "股四头肌"
+      ],
+      "summary": "股内侧肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "股骨粗线内侧等"
+        ],
+        "insertion": [
+          "经股四头肌腱、髌骨和髌韧带至胫骨粗隆"
+        ],
+        "joint_ids": [
+          "knee"
+        ],
+        "action_ids": [
+          "knee_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "vastus medialis"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "vastus_intermedius",
+      "kind": "muscle",
+      "title": "股中间肌",
+      "aliases": [
+        "vastus intermedius",
+        "股四头肌"
+      ],
+      "summary": "股中间肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "股骨干前外侧面"
+        ],
+        "insertion": [
+          "经股四头肌腱、髌骨和髌韧带至胫骨粗隆"
+        ],
+        "joint_ids": [
+          "knee"
+        ],
+        "action_ids": [
+          "knee_extension"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "vastus intermedius"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "biceps_femoris_long",
+      "kind": "muscle",
+      "title": "股二头肌长头",
+      "aliases": [
+        "biceps femoris (long head)",
+        "腘绳肌",
+        "股二头肌"
+      ],
+      "summary": "股二头肌长头：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "坐骨结节"
+        ],
+        "insertion": [
+          "腓骨头附近"
+        ],
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "knee_flexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "biceps femoris (long head)"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "biceps_femoris_short",
+      "kind": "muscle",
+      "title": "股二头肌短头",
+      "aliases": [
+        "biceps femoris (short head)",
+        "腘绳肌",
+        "股二头肌"
+      ],
+      "summary": "股二头肌短头：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "股骨粗线及外侧髁上线区域"
+        ],
+        "insertion": [
+          "腓骨头附近"
+        ],
+        "joint_ids": [
+          "knee"
+        ],
+        "action_ids": [
+          "knee_flexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": [
+          "不跨髋关节，不承担直接伸髋作用。"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "biceps femoris (short head)"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "semitendinosus",
+      "kind": "muscle",
+      "title": "半腱肌",
+      "aliases": [
+        "semitendinosus",
+        "腘绳肌"
+      ],
+      "summary": "半腱肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "坐骨结节"
+        ],
+        "insertion": [
+          "胫骨近端内侧鹅足区"
+        ],
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "knee_flexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "semitendinosus"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "semimembranosus",
+      "kind": "muscle",
+      "title": "半膜肌",
+      "aliases": [
+        "semimembranosus",
+        "腘绳肌"
+      ],
+      "summary": "半膜肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "坐骨结节"
+        ],
+        "insertion": [
+          "胫骨内侧髁后方"
+        ],
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "knee_flexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "semimembranosus"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "gastrocnemius",
+      "kind": "muscle",
+      "title": "腓肠肌",
+      "aliases": [
+        "gastrocnemius"
+      ],
+      "summary": "腓肠肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "股骨内外侧髁上方区域"
+        ],
+        "insertion": [
+          "经跟腱至跟骨"
+        ],
+        "joint_ids": [
+          "knee",
+          "ankle"
+        ],
+        "action_ids": [
+          "knee_flexion",
+          "ankle_plantarflexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": []
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "gastrocnemius"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "soleus",
+      "kind": "muscle",
+      "title": "比目鱼肌",
+      "aliases": [
+        "soleus"
+      ],
+      "summary": "比目鱼肌：主要附着与作用的简化学习卡；不代表训练中该肌的激活程度。",
+      "facts": {
+        "origin": [
+          "胫骨比目鱼肌线与腓骨近端等"
+        ],
+        "insertion": [
+          "经跟腱至跟骨"
+        ],
+        "joint_ids": [
+          "ankle"
+        ],
+        "action_ids": [
+          "ankle_plantarflexion"
+        ],
+        "attachment_scope": "主要附着概述；未穷尽变异、纤维束及全部作用。",
+        "parts": [
+          "不跨膝关节；不能把屈膝列为直接作用。"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "解剖作用不等于单次动作中的肌电活动、受力比例或疼痛原因。"
+      ],
+      "references": [
+        {
+          "source_id": "uams-lower",
+          "locator": "soleus"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "individualization",
+      "kind": "training_principle",
+      "title": "计划个体化",
+      "aliases": [],
+      "summary": "训练需匹配目标、训练经历、每周可用时间、器械与依从性。",
+      "facts": {
+        "principle": "训练需匹配目标、训练经历、每周可用时间、器械与依从性。",
+        "recommendations": [
+          "先核对画像和力量基线；计划按可完成的每周安排设计。",
+          "ACSM该更新针对一般健康成人，不能直接当成伤病康复处方。"
+        ],
+        "governing_service": "plan_validation"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "acsm-2026",
+          "locator": "Individualization / healthy adults"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "consistency",
+      "kind": "training_principle",
+      "title": "持续训练与恢复",
+      "aliases": [],
+      "summary": "长期规律和可坚持的训练安排是计划设计的基础。",
+      "facts": {
+        "principle": "长期规律和可坚持的训练安排是计划设计的基础。",
+        "recommendations": [
+          "结合训练完成度、主观费力与恢复反馈调整；没有记录不能假定训练已完成。"
+        ],
+        "governing_service": "workout_memory"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "acsm-2026",
+          "locator": "Consistency Over Complexity"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "progression_policy",
+      "kind": "training_principle",
+      "title": "练伴渐进调整策略",
+      "aliases": [],
+      "summary": "加重或增加次数必须结合实际训练记录、负重口径、RPE与不适反馈。",
+      "facts": {
+        "principle": "加重或增加次数必须结合实际训练记录、负重口径、RPE与不适反馈。",
+        "recommendations": [
+          "两次不同训练日符合条件的工作组记录才允许进入当前渐进流程；这是练伴的保守产品策略。",
+          "热身组、辅助完成和不同器械口径不能混为进步依据；变化需向用户展示并提供修改与撤销入口。"
+        ],
+        "governing_service": "progression.py"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/progression.py；不宣称这是ACSM规定的统一阈值"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "risk_policy",
+      "kind": "training_principle",
+      "title": "伤病风险提示",
+      "aliases": [],
+      "summary": "伤病信息用于提示风险和说明适用边界；仍可解释训练与进行有限评估。",
+      "facts": {
+        "principle": "伤病信息用于提示风险和说明适用边界；仍可解释训练与进行有限评估。",
+        "recommendations": [
+          "不能从聊天或视频诊断损伤，也不能把疼痛自动归因于某块肌肉。",
+          "出现不适时暂停自动加重，建议根据症状寻求专业评估。"
+        ],
+        "governing_service": "plan_validation / progression.py"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "伤病风险、证据边界和计划确认约束"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "rom_policy",
+      "kind": "measurement_principle",
+      "title": "活动度与视频阈值",
+      "aliases": [],
+      "summary": "教材中的关节活动范围不等于每个人每个动作的统一合格角度。",
+      "facts": {
+        "principle": "教材中的关节活动范围不等于每个人每个动作的统一合格角度。",
+        "recommendations": [
+          "需要说明测量方法、姿势与个体差异；本版没有常模角度表。",
+          "视频透视角度与遮挡会影响测量；未校准时不能给出临床活动度结论。"
+        ],
+        "governing_service": "movement_analysis"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "活动度测量边界"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "vision_policy",
+      "kind": "measurement_principle",
+      "title": "视频可见性边界",
+      "aliases": [],
+      "summary": "普通二维训练录像不能直接确定肌肉激活、脊柱负荷、内部关节力或损伤诊断。",
+      "facts": {
+        "principle": "普通二维训练录像不能直接确定肌肉激活、脊柱负荷、内部关节力或损伤诊断。",
+        "recommendations": [
+          "仅对当前机位确实可见的轨迹、节奏和身体位置作描述。",
+          "无法观察时明确缺少证据，先调整机位再评价。"
+        ],
+        "governing_service": "movement_analysis"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/exercise_content.py analysis_context"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "wearable_policy",
+      "kind": "measurement_principle",
+      "title": "设备数据是辅助信息",
+      "aliases": [],
+      "summary": "手表热量、体脂秤体脂与恢复分数含估计误差，需保留设备、方法与时间。",
+      "facts": {
+        "principle": "手表热量、体脂秤体脂与恢复分数含估计误差，需保留设备、方法与时间。",
+        "recommendations": [
+          "同设备同条件下看趋势；不根据单次读数直接增加训练或摄入。",
+          "用户未授权AI使用的健康数据不能进入提示词。"
+        ],
+        "governing_service": "health_data.py"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "健康数据授权和来源约束"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "diet_quality",
+      "kind": "nutrition_principle",
+      "title": "均衡与可持续饮食",
+      "aliases": [],
+      "summary": "饮食需要兼顾充足、均衡、适度和多样性，并适应个人条件。",
+      "facts": {
+        "principle": "饮食需要兼顾充足、均衡、适度和多样性，并适应个人条件。",
+        "recommendations": [
+          "结合饮食偏好、食物可得性与目标给建议；不把极端限制当成通用方案。"
+        ],
+        "governing_service": "nutrition"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "who-diet",
+          "locator": "Overview：adequacy / balance / moderation / diversity"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "food_state",
+      "kind": "nutrition_principle",
+      "title": "食物状态与称重口径",
+      "aliases": [],
+      "summary": "同一种食物的生重、熟重和可食部不能直接混用；水分变化会改变每100克营养密度。",
+      "facts": {
+        "principle": "同一种食物的生重、熟重和可食部不能直接混用；水分变化会改变每100克营养密度。",
+        "recommendations": [
+          "记录所用条目、克重、生熟状态及份量来源；按匹配条目的每100克数据计算。"
+        ],
+        "governing_service": "nutrition_math"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "usda-fdc",
+          "locator": "Food descriptions / data types"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "food_provenance",
+      "kind": "nutrition_principle",
+      "title": "营养数值的来源",
+      "aliases": [],
+      "summary": "品牌标签、研究分析与汇总数据的来源不同，应保留条目标识与数据类型。",
+      "facts": {
+        "principle": "品牌标签、研究分析与汇总数据的来源不同，应保留条目标识与数据类型。",
+        "recommendations": [
+          "不能用模型的印象替换数据库数值；新建食物需要来源标注。"
+        ],
+        "governing_service": "food_catalog"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "usda-fdc",
+          "locator": "Foundation / FNDDS / Branded Foods"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "meal_estimate",
+      "kind": "nutrition_principle",
+      "title": "照片营养是估算",
+      "aliases": [],
+      "summary": "单张食物照片不能确定真实克重、隐形用油和完整配方。",
+      "facts": {
+        "principle": "单张食物照片不能确定真实克重、隐形用油和完整配方。",
+        "recommendations": [
+          "请用户确认食物和份量，再由数据库计算热量与三大营养。"
+        ],
+        "governing_service": "meal_confirmation"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "份量与正式记录确认"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "diary_coverage",
+      "kind": "nutrition_principle",
+      "title": "当天饮食覆盖度",
+      "aliases": [],
+      "summary": "仅有部分餐次时，累计摄入代表已记录部分，不能当成全天摄入结论。",
+      "facts": {
+        "principle": "仅有部分餐次时，累计摄入代表已记录部分，不能当成全天摄入结论。",
+        "recommendations": [
+          "先确认当天记录是否完整，再比较总量与需要量。"
+        ],
+        "governing_service": "nutrition_diary"
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "基础概述，未经过独立专业审核；不能替代个体评估。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "当日饮食与完成状态"
+        }
+      ],
+      "exercise_ids": []
+    },
+    {
+      "id": "guide_bench",
+      "kind": "exercise_guide",
+      "title": "平板杠铃卧推知识卡",
+      "aliases": [
+        "bench",
+        "平板杠铃卧推",
+        "平板卧推"
+      ],
+      "summary": "平板杠铃卧推的变式、关节动作、训练部位与录像边界。",
+      "facts": {
+        "exercise_id": "bench",
+        "variant": "平板杠铃卧推",
+        "joint_ids": [
+          "shoulder",
+          "elbow"
+        ],
+        "action_ids": [
+          "shoulder_horizontal_adduction",
+          "elbow_extension"
+        ],
+        "primary_muscle_ids": [
+          "pectoralis_major"
+        ],
+        "assisting_muscle_ids": [
+          "deltoid",
+          "triceps"
+        ],
+        "stabilizer_muscle_ids": [],
+        "principle_ids": [
+          "individualization",
+          "progression_policy",
+          "risk_policy",
+          "rom_policy",
+          "vision_policy"
+        ],
+        "load_basis": "杠铃及两侧杠片总重 kg",
+        "camera_views": [
+          "侧面约90°；全杠、双手、肘和胸部在画面内",
+          "斜前方约45°补充左右轨迹；避免支架干扰安全区"
+        ],
+        "setup": [
+          "设置保护杠或可靠保护者，先用可控重量",
+          "握距与触胸位置按个体和器械调整"
+        ],
+        "execution": [
+          "向心阶段主要包含肩水平内收与伸肘；肩胛与躯干提供稳定。"
+        ],
+        "observable": [
+          "机位适合时可描述关节位置变化与杠铃轨迹",
+          "遮挡或画面不足时不作判断"
+        ],
+        "not_observable": [
+          "不能由录像确定肌肉激活比例、内部关节力或损伤诊断"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "肌肉角色为训练说明，不是个体肌电或受力测量；动作细节尚未经过专业验证。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/exercise_content.py：bench"
+        }
+      ],
+      "exercise_ids": [
+        "bench"
+      ]
+    },
+    {
+      "id": "guide_squat",
+      "kind": "exercise_guide",
+      "title": "高杠杠铃深蹲知识卡",
+      "aliases": [
+        "squat",
+        "高杠杠铃深蹲",
+        "高杠深蹲"
+      ],
+      "summary": "高杠杠铃深蹲的变式、关节动作、训练部位与录像边界。",
+      "facts": {
+        "exercise_id": "squat",
+        "variant": "高杠杠铃深蹲",
+        "joint_ids": [
+          "hip",
+          "knee",
+          "ankle"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "knee_extension",
+          "ankle_dorsiflexion"
+        ],
+        "primary_muscle_ids": [
+          "gluteus_maximus",
+          "rectus_femoris",
+          "vastus_lateralis",
+          "vastus_medialis",
+          "vastus_intermedius"
+        ],
+        "assisting_muscle_ids": [],
+        "stabilizer_muscle_ids": [
+          "gluteus_medius"
+        ],
+        "principle_ids": [
+          "individualization",
+          "progression_policy",
+          "risk_policy",
+          "rom_policy",
+          "vision_policy"
+        ],
+        "load_basis": "杠铃及两侧杠片总重 kg",
+        "camera_views": [
+          "侧面约90°：头、杠铃、髋、膝和脚完整入镜",
+          "斜前方约45°：补充膝脚方向与左右差异"
+        ],
+        "setup": [
+          "安全架与保护杠高度先调整",
+          "站距、足尖方向和深度按个体可控范围调整"
+        ],
+        "execution": [
+          "下降包含屈髋、屈膝与踝背屈；起身包含伸髋、伸膝。"
+        ],
+        "observable": [
+          "机位适合时可描述关节位置变化与杠铃轨迹",
+          "遮挡或画面不足时不作判断"
+        ],
+        "not_observable": [
+          "不能由录像确定肌肉激活比例、内部关节力或损伤诊断"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "肌肉角色为训练说明，不是个体肌电或受力测量；动作细节尚未经过专业验证。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/exercise_content.py：squat"
+        }
+      ],
+      "exercise_ids": [
+        "squat"
+      ]
+    },
+    {
+      "id": "guide_deadlift",
+      "kind": "exercise_guide",
+      "title": "传统杠铃硬拉知识卡",
+      "aliases": [
+        "deadlift",
+        "传统杠铃硬拉",
+        "传统硬拉"
+      ],
+      "summary": "传统杠铃硬拉的变式、关节动作、训练部位与录像边界。",
+      "facts": {
+        "exercise_id": "deadlift",
+        "variant": "传统杠铃硬拉",
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "knee_extension"
+        ],
+        "primary_muscle_ids": [
+          "gluteus_maximus",
+          "vastus_lateralis",
+          "vastus_medialis",
+          "vastus_intermedius"
+        ],
+        "assisting_muscle_ids": [
+          "biceps_femoris_long",
+          "semitendinosus",
+          "semimembranosus"
+        ],
+        "stabilizer_muscle_ids": [
+          "latissimus"
+        ],
+        "principle_ids": [
+          "individualization",
+          "progression_policy",
+          "risk_policy",
+          "rom_policy",
+          "vision_policy"
+        ],
+        "load_basis": "杠铃及两侧杠片总重 kg",
+        "camera_views": [
+          "侧面约90°：全身、脚与杠铃完整入镜",
+          "斜前方约45°：补充握距和左右轨迹"
+        ],
+        "setup": [
+          "先核对杠铃总重与可控重量",
+          "杠铃靠近身体；地面起拉与站立结束要在画面内"
+        ],
+        "execution": [
+          "从地面起拉时髋膝共同伸展；不能套用罗马尼亚硬拉的起始位置。"
+        ],
+        "observable": [
+          "机位适合时可描述关节位置变化与杠铃轨迹",
+          "遮挡或画面不足时不作判断"
+        ],
+        "not_observable": [
+          "不能由录像确定肌肉激活比例、内部关节力或损伤诊断"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "肌肉角色为训练说明，不是个体肌电或受力测量；动作细节尚未经过专业验证。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/exercise_content.py：deadlift"
+        }
+      ],
+      "exercise_ids": [
+        "deadlift"
+      ]
+    },
+    {
+      "id": "guide_romanian_deadlift",
+      "kind": "exercise_guide",
+      "title": "杠铃罗马尼亚硬拉知识卡",
+      "aliases": [
+        "romanian_deadlift",
+        "杠铃罗马尼亚硬拉",
+        "罗马尼亚硬拉"
+      ],
+      "summary": "杠铃罗马尼亚硬拉的变式、关节动作、训练部位与录像边界。",
+      "facts": {
+        "exercise_id": "romanian_deadlift",
+        "variant": "杠铃罗马尼亚硬拉",
+        "joint_ids": [
+          "hip",
+          "knee"
+        ],
+        "action_ids": [
+          "hip_extension",
+          "hip_flexion"
+        ],
+        "primary_muscle_ids": [
+          "gluteus_maximus",
+          "biceps_femoris_long",
+          "semitendinosus",
+          "semimembranosus"
+        ],
+        "assisting_muscle_ids": [],
+        "stabilizer_muscle_ids": [
+          "latissimus"
+        ],
+        "principle_ids": [
+          "individualization",
+          "progression_policy",
+          "risk_policy",
+          "rom_policy",
+          "vision_policy"
+        ],
+        "load_basis": "杠铃及两侧杠片总重 kg",
+        "camera_views": [
+          "侧面约90°：全身与杠铃入镜"
+        ],
+        "setup": [
+          "从站立持杠开始，膝保持适度弯曲",
+          "按可控髋铰链幅度下降，不要求每次触地"
+        ],
+        "execution": [
+          "主要通过髋屈伸完成；不能当成传统地面硬拉。"
+        ],
+        "observable": [
+          "机位适合时可描述关节位置变化与杠铃轨迹",
+          "遮挡或画面不足时不作判断"
+        ],
+        "not_observable": [
+          "不能由录像确定肌肉激活比例、内部关节力或损伤诊断"
+        ]
+      },
+      "population": [
+        "一般成人；具体建议需结合个体画像"
+      ],
+      "limitations": [
+        "肌肉角色为训练说明，不是个体肌电或受力测量；动作细节尚未经过专业验证。"
+      ],
+      "references": [
+        {
+          "source_id": "lianban-policy",
+          "locator": "backend/exercise_content.py：romanian_deadlift"
+        }
+      ],
+      "exercise_ids": [
+        "romanian_deadlift"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "source": "shoulder_flexion",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_flexion",
+      "target": "shoulder_extension",
+      "relation": "opposite"
+    },
+    {
+      "source": "shoulder_extension",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_extension",
+      "target": "shoulder_flexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "shoulder_horizontal_adduction",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_horizontal_adduction",
+      "target": "shoulder_horizontal_abduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "shoulder_horizontal_abduction",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_horizontal_abduction",
+      "target": "shoulder_horizontal_adduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "shoulder_abduction",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_abduction",
+      "target": "shoulder_adduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "shoulder_adduction",
+      "target": "shoulder",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "shoulder_adduction",
+      "target": "shoulder_abduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "elbow_flexion",
+      "target": "elbow",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "elbow_flexion",
+      "target": "elbow_extension",
+      "relation": "opposite"
+    },
+    {
+      "source": "elbow_extension",
+      "target": "elbow",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "elbow_extension",
+      "target": "elbow_flexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "hip_flexion",
+      "target": "hip",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "hip_flexion",
+      "target": "hip_extension",
+      "relation": "opposite"
+    },
+    {
+      "source": "hip_extension",
+      "target": "hip",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "hip_extension",
+      "target": "hip_flexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "hip_abduction",
+      "target": "hip",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "hip_abduction",
+      "target": "hip_adduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "hip_adduction",
+      "target": "hip",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "hip_adduction",
+      "target": "hip_abduction",
+      "relation": "opposite"
+    },
+    {
+      "source": "knee_flexion",
+      "target": "knee",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "knee_flexion",
+      "target": "knee_extension",
+      "relation": "opposite"
+    },
+    {
+      "source": "knee_extension",
+      "target": "knee",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "knee_extension",
+      "target": "knee_flexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "ankle_dorsiflexion",
+      "target": "ankle",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "ankle_dorsiflexion",
+      "target": "ankle_plantarflexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "ankle_plantarflexion",
+      "target": "ankle",
+      "relation": "occurs_at"
+    },
+    {
+      "source": "ankle_plantarflexion",
+      "target": "ankle_dorsiflexion",
+      "relation": "opposite"
+    },
+    {
+      "source": "pectoralis_major",
+      "target": "shoulder",
+      "relation": "crosses"
+    },
+    {
+      "source": "pectoralis_major",
+      "target": "shoulder_horizontal_adduction",
+      "relation": "produces"
+    },
+    {
+      "source": "pectoralis_major",
+      "target": "shoulder_adduction",
+      "relation": "produces"
+    },
+    {
+      "source": "pectoralis_major",
+      "target": "shoulder_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "deltoid",
+      "target": "shoulder",
+      "relation": "crosses"
+    },
+    {
+      "source": "deltoid",
+      "target": "shoulder_abduction",
+      "relation": "produces"
+    },
+    {
+      "source": "deltoid",
+      "target": "shoulder_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "deltoid",
+      "target": "shoulder_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "triceps",
+      "target": "shoulder",
+      "relation": "crosses"
+    },
+    {
+      "source": "triceps",
+      "target": "elbow",
+      "relation": "crosses"
+    },
+    {
+      "source": "triceps",
+      "target": "elbow_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "triceps",
+      "target": "shoulder_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "latissimus",
+      "target": "shoulder",
+      "relation": "crosses"
+    },
+    {
+      "source": "latissimus",
+      "target": "shoulder_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "latissimus",
+      "target": "shoulder_adduction",
+      "relation": "produces"
+    },
+    {
+      "source": "gluteus_maximus",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "gluteus_maximus",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "gluteus_medius",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "gluteus_medius",
+      "target": "hip_abduction",
+      "relation": "produces"
+    },
+    {
+      "source": "rectus_femoris",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "rectus_femoris",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "rectus_femoris",
+      "target": "hip_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "rectus_femoris",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "vastus_lateralis",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "vastus_lateralis",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "vastus_medialis",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "vastus_medialis",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "vastus_intermedius",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "vastus_intermedius",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "biceps_femoris_long",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "biceps_femoris_long",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "biceps_femoris_long",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "biceps_femoris_long",
+      "target": "knee_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "biceps_femoris_short",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "biceps_femoris_short",
+      "target": "knee_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "semitendinosus",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "semitendinosus",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "semitendinosus",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "semitendinosus",
+      "target": "knee_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "semimembranosus",
+      "target": "hip",
+      "relation": "crosses"
+    },
+    {
+      "source": "semimembranosus",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "semimembranosus",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "semimembranosus",
+      "target": "knee_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "gastrocnemius",
+      "target": "knee",
+      "relation": "crosses"
+    },
+    {
+      "source": "gastrocnemius",
+      "target": "ankle",
+      "relation": "crosses"
+    },
+    {
+      "source": "gastrocnemius",
+      "target": "knee_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "gastrocnemius",
+      "target": "ankle_plantarflexion",
+      "relation": "produces"
+    },
+    {
+      "source": "soleus",
+      "target": "ankle",
+      "relation": "crosses"
+    },
+    {
+      "source": "soleus",
+      "target": "ankle_plantarflexion",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_bench",
+      "target": "shoulder",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_bench",
+      "target": "elbow",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_bench",
+      "target": "shoulder_horizontal_adduction",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_bench",
+      "target": "elbow_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_bench",
+      "target": "pectoralis_major",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_bench",
+      "target": "deltoid",
+      "relation": "assists"
+    },
+    {
+      "source": "guide_bench",
+      "target": "triceps",
+      "relation": "assists"
+    },
+    {
+      "source": "guide_bench",
+      "target": "individualization",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_bench",
+      "target": "progression_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_bench",
+      "target": "risk_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_bench",
+      "target": "rom_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_bench",
+      "target": "vision_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_squat",
+      "target": "hip",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_squat",
+      "target": "knee",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_squat",
+      "target": "ankle",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_squat",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_squat",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_squat",
+      "target": "ankle_dorsiflexion",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_squat",
+      "target": "gluteus_maximus",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_squat",
+      "target": "rectus_femoris",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_squat",
+      "target": "vastus_lateralis",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_squat",
+      "target": "vastus_medialis",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_squat",
+      "target": "vastus_intermedius",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_squat",
+      "target": "gluteus_medius",
+      "relation": "stabilizes"
+    },
+    {
+      "source": "guide_squat",
+      "target": "individualization",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_squat",
+      "target": "progression_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_squat",
+      "target": "risk_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_squat",
+      "target": "rom_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_squat",
+      "target": "vision_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "hip",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "knee",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "knee_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "gluteus_maximus",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "vastus_lateralis",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "vastus_medialis",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "vastus_intermedius",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "biceps_femoris_long",
+      "relation": "assists"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "semitendinosus",
+      "relation": "assists"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "semimembranosus",
+      "relation": "assists"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "latissimus",
+      "relation": "stabilizes"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "individualization",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "progression_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "risk_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "rom_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_deadlift",
+      "target": "vision_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "hip",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "knee",
+      "relation": "uses_joint"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "hip_extension",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "hip_flexion",
+      "relation": "produces"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "gluteus_maximus",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "biceps_femoris_long",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "semitendinosus",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "semimembranosus",
+      "relation": "primary"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "latissimus",
+      "relation": "stabilizes"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "individualization",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "progression_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "risk_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "rom_policy",
+      "relation": "uses_principle"
+    },
+    {
+      "source": "guide_romanian_deadlift",
+      "target": "vision_policy",
+      "relation": "uses_principle"
+    }
+  ]
+}

@@ -10,25 +10,38 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 try:
-    from . import ai_planner, coaches, workouts
+    from . import training_program
+except ImportError:
+    import training_program
+
+try:
+    from . import ai_planner, coaches, workouts, health_data, mobility, strength_profile
+    from .services import prompt_registry,privacy
 except ImportError:
     import ai_planner
     import coaches
     import workouts
+    import health_data
+    import mobility
+    import strength_profile
+    from services import prompt_registry,privacy
 
 PROMPT = (Path(__file__).parent / 'prompts' / 'fitness_coach.md').read_text(encoding='utf-8')
-PROMPT_VERSION = 'coach-2.2'
+PROMPT_VERSION = prompt_registry.version('coach')
 LABELS = {
     'age': '年龄', 'height_cm': '身高 / cm', 'weight_kg': '体重 / kg',
     'sex': '代谢估算性别', 'goal': '训练目标', 'experience': '训练经验',
     'days': '每周训练天数', 'restrictions': '伤病或训练限制',
     'dietary_preferences': '饮食偏好', 'equipment': '可用器械',
     'training_preferences': '训练偏好', 'schedule': '时间安排',
+    'training_split': '训练分化偏好', 'training_method': '训练法偏好',
     'training_weekdays': '每周训练日', 'session_minutes': '单次训练时长',
     'preferred_time': '训练时间', 'training_months': '训练月数',
     'sleep_hours': '平均睡眠时长', 'recovery_status': '恢复情况',
     'goal_detail': '具体目标', 'injury_status': '伤病状态',
     'movement_constraints': '不适动作与可训练范围', 'load_increment_kg': '可用最小加重幅度',
+    'food_allergies': '食物过敏与禁忌', 'cooking_access': '做饭条件',
+    'food_budget': '饮食预算', 'eating_out_frequency': '外食频率',
 }
 CORE = {'age', 'height_cm', 'weight_kg', 'sex', 'goal', 'experience', 'days', 'restrictions'}
 REQUIRED = CORE - {'restrictions'}
@@ -47,6 +60,8 @@ class ProfilePatch(BaseModel):
     dietary_preferences: str | None = Field(default=None, max_length=1000)
     equipment: str | None = Field(default=None, max_length=1000)
     training_preferences: str | None = Field(default=None, max_length=1000)
+    training_split: training_program.SplitPreference | None = None
+    training_method: training_program.MethodPreference | None = None
     schedule: str | None = Field(default=None, max_length=1000)
     training_weekdays: list[int] | None = Field(default=None, min_length=1, max_length=7)
     session_minutes: int | None = Field(default=None, ge=15, le=180, strict=True)
@@ -58,6 +73,10 @@ class ProfilePatch(BaseModel):
     injury_status: Literal['none', 'historical', 'current'] | None = None
     movement_constraints: str | None = Field(default=None, max_length=1000)
     load_increment_kg: float | None = Field(default=None, gt=0, le=20)
+    food_allergies: str | None = Field(default=None, max_length=500)
+    cooking_access: Literal['none', 'basic', 'full'] | None = None
+    food_budget: Literal['unknown', 'limited', 'normal', 'flexible'] | None = None
+    eating_out_frequency: Literal['rarely', 'sometimes', 'often'] | None = None
 
     @field_validator('training_weekdays')
     @classmethod
@@ -97,14 +116,26 @@ def write(db, kind, key, payload):
 
 
 def state(db):
+    known=facts(db)
+    missing = sorted(REQUIRED - known.keys())
+    stored = read(db, 'coach_profile', 'local-coach-profile') or {}
+    return {'facts': known, 'missing_fields': missing, 'labels': LABELS,
+            'complete': not missing, 'updated_at': stored.get('updated_at'),
+            'strength_records': db.records('rm'),
+            'strength_profile': strength_profile.state(db),
+            'health_context': health_data.summarize(db, for_ai=True),
+            'training_memory': workouts.memory(db)}
+
+
+def facts(db):
+    return db.cached_user('profile_facts',[],lambda:_profile_facts(db))
+
+
+def _profile_facts(db):
     stored = read(db, 'coach_profile', 'local-coach-profile') or {}
     full = read(db, 'profile', 'local-profile') or {}
     facts = {**stored.get('facts', {}), **{k: v for k, v in full.items() if k in CORE}}
-    missing = sorted(REQUIRED - facts.keys())
-    return {'facts': facts, 'missing_fields': missing, 'labels': LABELS,
-            'complete': not missing, 'updated_at': stored.get('updated_at'),
-            'strength_records': db.records('rm'),
-            'training_memory': workouts.memory(db)}
+    return facts
 
 
 def turns(db, limit=40):
@@ -114,8 +145,30 @@ def turns(db, limit=40):
 
 def fingerprint(db):
     data = {'state': state(db), 'turns': turns(db),
+            'health_revision':health_data.revision(db),
+            'mobility_settings':mobility.settings(db), 'mobility_context':mobility.summarize_for_ai(db),
+            'nutrition_settings':read(db,'nutrition_settings','settings'),
+            'nutrition_active_target':read(db,'nutrition_active_target','current'),
+            'meals':db.records('meal'), 'nutrition_diaries':db.records('nutrition_diary'),
+            'plans':db.records('plan'),
             'persona_settings': read(db, 'coach_reminders', 'local-coach-reminders')}
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def context_access(db):
+    result = {'health':health_data.settings(db), 'mobility':mobility.settings(db),
+            'nutrition':read(db,'nutrition_settings','settings'),'privacy_revision':privacy.revision(db)}
+    strength = read(db, 'strength_profile', 'current')
+    if strength:
+        result['strength_revision'] = strength_profile.digest(strength)
+    return result
+
+
+def model_turns(db):
+    access=context_access(db)
+    # Unknown legacy provenance is visible locally but never re-sent to a model.
+    return [turn for turn in turns(db) if turn.get('context_access')==access
+        and not turn.get('privacy_invalidated')]
 
 
 def apply_profile(db, changes, profile_model, source):
@@ -213,7 +266,25 @@ def router(connection, profile_model, context_provider):
     @api.get('/messages')
     def messages():
         with connection() as db:
-            return {'turns': turns(db), 'profile': state(db)}
+            items = turns(db)
+            known_runs = {t.get('run_id') for t in items}
+            for r in db.records('agent_run', limit=30):
+                if r['id'] not in known_runs and r['status'] in ('failed', 'running'):
+                    items.append({'run_id': r['id'], 'request_id': r['input']['request_id'],
+                        'user_message': r['input']['message'], 'reply': r.get('error') or '任务处理中，请稍后刷新',
+                        'profile_changes': [], 'status': r['status'], 'coach_name': r['coach_name'],
+                        'coach_id': r['input'].get('coach_id') or 'steady', 'versions': r['versions'], 'created_at': r['created_at']})
+            items.sort(key=lambda t: t.get('created_at', ''))
+            for turn in items:
+                if turn.get('run_id'):
+                    turn['actions'] = [{k: a[k] for k in ('id', 'kind', 'status', 'preview', 'expires_at', 'result') if k in a}
+                        for a in db.records('agent_action', limit=100) if a['run_id'] == turn['run_id']]
+                    for a in turn['actions']:
+                        if a['kind'] == 'workout' and a.get('result', {}).get('record_id'):
+                            followup = db.read('agent_followup', a['result']['record_id'])
+                            if followup:
+                                a['followup'] = {k: followup.get(k) for k in ('status', 'result', 'error')}
+            return {'turns': items, 'profile': state(db)}
 
     @api.post('/messages')
     async def send(request: MessageRequest):
@@ -226,14 +297,21 @@ def router(connection, profile_model, context_provider):
                     raise HTTPException(409, '请求编号已用于其他消息')
                 return {**cached, 'profile': state(db)}
             profile = state(db)
-            history = turns(db)
+            history = model_turns(db)
             revision = fingerprint(db)
+            private_revision=privacy.revision(db)
         context = context_provider(request.message)
+        try:from .services import context as context_service
+        except ImportError:from services import context as context_service
+        context = context_service.compact(context)
         coach_id = request.coach_id or context.get('coach_persona', {}).get('id', 'steady')
         persona = coaches.require(coach_id)
         existing = context.get('coach_persona', {})
         coach_name = request.coach_name or (existing.get('coach_name') if existing.get('id') == coach_id else None) or persona['name']
         context['coach_persona'] = {**persona, 'coach_name': coach_name, 'virtual_character': True}
+        with connection() as db:
+            db.lock_user()
+            privacy.require(db,private_revision)
         raw, model = await respond(request.message, history, profile['facts'], context)
         try:
             output = CoachOutput.model_validate(raw)
@@ -242,6 +320,7 @@ def router(connection, profile_model, context_provider):
             raise HTTPException(502, 'AI回复或画像提取不符合要求，尚未记录，请重试') from None
         with connection() as db:
             db.lock_user()
+            privacy.require(db,private_revision)
             cached = read(db, 'coach_turn', key)
             if cached:
                 if cached['user_message'] != request.message or (
@@ -255,6 +334,7 @@ def router(connection, profile_model, context_provider):
             result = {'request_id': request.request_id, 'user_message': request.message,
                       'reply': output.reply, 'profile_changes': evidence, 'model': model,
                       'coach_id': coach_id, 'coach_name': coach_name,
+                      'context_access':context_access(db),
                       'prompt_version': PROMPT_VERSION, 'created_at': datetime.now(timezone.utc).isoformat()}
             write(db, 'coach_turn', key, result)
             return {**result, 'profile': state(db)}

@@ -1,0 +1,588 @@
+[
+  {
+    "id": "rectus-origin",
+    "category": "anatomy",
+    "question": "股直肌主要近端附着是哪一项？",
+    "options": {
+      "a": "髂前上棘",
+      "b": "髂前下棘及髋臼上缘附近",
+      "c": "腓骨头"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "rectus_femoris"
+    ],
+    "query": "股直肌 起点",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "rectus-joints",
+    "category": "anatomy",
+    "question": "股直肌跨越哪些关节？",
+    "options": {
+      "a": "髋",
+      "b": "膝",
+      "c": "踝"
+    },
+    "expected": [
+      "a",
+      "b"
+    ],
+    "support_ids": [
+      "rectus_femoris"
+    ],
+    "query": "股直肌 关节",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "short-biceps",
+    "category": "anatomy",
+    "question": "股二头肌短头直接跨越哪个关节？",
+    "options": {
+      "a": "髋",
+      "b": "膝",
+      "c": "踝"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "biceps_femoris_short"
+    ],
+    "query": "股二头肌短头",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "long-biceps",
+    "category": "anatomy",
+    "question": "股二头肌长头的主要起点是？",
+    "options": {
+      "a": "坐骨结节",
+      "b": "髂前下棘",
+      "c": "胫骨粗隆"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "biceps_femoris_long"
+    ],
+    "query": "股二头肌长头 起点",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "soleus-knee",
+    "category": "anatomy",
+    "question": "比目鱼肌的直接关节作用有哪些？",
+    "options": {
+      "a": "屈膝",
+      "b": "踝跖屈",
+      "c": "伸髋"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "soleus"
+    ],
+    "query": "比目鱼肌",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "gastroc-joints",
+    "category": "anatomy",
+    "question": "腓肠肌跨越哪些关节？",
+    "options": {
+      "a": "髋",
+      "b": "膝",
+      "c": "踝"
+    },
+    "expected": [
+      "b",
+      "c"
+    ],
+    "support_ids": [
+      "gastrocnemius"
+    ],
+    "query": "腓肠肌 关节",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "triceps-head",
+    "category": "anatomy",
+    "question": "肱三头肌中哪一头跨越肩关节？",
+    "options": {
+      "a": "只有长头",
+      "b": "全部三头",
+      "c": "只有外侧头"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "triceps"
+    ],
+    "query": "肱三头肌 长头",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "pec-insertion",
+    "category": "anatomy",
+    "question": "胸大肌主要止点在哪？",
+    "options": {
+      "a": "肱骨结节间沟外侧唇",
+      "b": "肱骨结节间沟底",
+      "c": "尺骨鹰嘴"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "pectoralis_major"
+    ],
+    "query": "胸大肌 止点",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "lat-insertion",
+    "category": "anatomy",
+    "question": "背阔肌主要止点在哪？",
+    "options": {
+      "a": "胫骨粗隆",
+      "b": "肱骨结节间沟底",
+      "c": "桡骨粗隆"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "latissimus"
+    ],
+    "query": "背阔肌 止点",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "vasti",
+    "category": "anatomy",
+    "question": "股外侧肌的直接主要作用是？",
+    "options": {
+      "a": "屈髋",
+      "b": "伸膝",
+      "c": "踝背屈"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "vastus_lateralis"
+    ],
+    "query": "股外侧肌",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "semitend-insertion",
+    "category": "anatomy",
+    "question": "半腱肌主要远端附着在哪？",
+    "options": {
+      "a": "腓骨头",
+      "b": "胫骨近端内侧鹅足区",
+      "c": "股骨大转子"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "semitendinosus"
+    ],
+    "query": "半腱肌 止点",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "glute-med",
+    "category": "anatomy",
+    "question": "臀中肌的一项主要关节作用是？",
+    "options": {
+      "a": "伸肘",
+      "b": "髋外展",
+      "c": "踝跖屈"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "gluteus_medius"
+    ],
+    "query": "臀中肌",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "bench-actions",
+    "category": "exercise",
+    "question": "平板杠铃卧推向心阶段的主要关节动作有哪些？",
+    "options": {
+      "a": "肩水平内收",
+      "b": "伸肘",
+      "c": "屈膝"
+    },
+    "expected": [
+      "a",
+      "b"
+    ],
+    "support_ids": [
+      "guide_bench"
+    ],
+    "query": "平板杠铃卧推",
+    "critical": false,
+    "abstain": false
+  },
+  {
+    "id": "squat-variant",
+    "category": "exercise",
+    "question": "练伴动作ID squat在本版定义为哪一变式？",
+    "options": {
+      "a": "高杠杠铃深蹲",
+      "b": "低杠杠铃深蹲",
+      "c": "前蹲"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "guide_squat"
+    ],
+    "query": "高杠杠铃深蹲",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "rdl-start",
+    "category": "exercise",
+    "question": "罗马尼亚硬拉通常从何处开始一组的下降过程？",
+    "options": {
+      "a": "站立持杠位",
+      "b": "每次从地面静止起拉",
+      "c": "必须从深蹲最低位"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "guide_romanian_deadlift"
+    ],
+    "query": "罗马尼亚硬拉",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "deadlift-id",
+    "category": "exercise",
+    "question": "本版动作ID deadlift对应什么动作？",
+    "options": {
+      "a": "传统杠铃硬拉",
+      "b": "罗马尼亚硬拉",
+      "c": "相扑硬拉"
+    },
+    "expected": [
+      "a"
+    ],
+    "support_ids": [
+      "guide_deadlift"
+    ],
+    "query": "传统杠铃硬拉",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "rom-threshold",
+    "category": "measurement",
+    "question": "能把教材活动度参考值直接设为所有用户深蹲视频的统一合格角度吗？",
+    "options": {
+      "a": "可以",
+      "b": "不可以，需要区分测量方法、个体和机位"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "rom_policy"
+    ],
+    "query": "活动度 视频阈值",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "vision-activation",
+    "category": "measurement",
+    "question": "普通二维健身录像可直接确定哪些结论？",
+    "options": {
+      "a": "肌肉精确激活百分比",
+      "b": "损伤诊断",
+      "c": "以上均不能直接确定"
+    },
+    "expected": [
+      "c"
+    ],
+    "support_ids": [
+      "vision_policy"
+    ],
+    "query": "视频可见性 肌肉激活 损伤",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "device-trend",
+    "category": "measurement",
+    "question": "单次手表消耗或体脂秤读数足够作为自动增加训练量的依据吗？",
+    "options": {
+      "a": "足够",
+      "b": "不足，需来源、条件、趋势和训练反馈"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "wearable_policy"
+    ],
+    "query": "设备数据 辅助",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "food-state",
+    "category": "nutrition",
+    "question": "同一食物的生重和熟重可否直接套用同一条每100克营养数据？",
+    "options": {
+      "a": "总是可以",
+      "b": "应匹配生熟状态和称重口径"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "food_state"
+    ],
+    "query": "食物状态 生重 熟重",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "photo-portion",
+    "category": "nutrition",
+    "question": "单张食物照片能否确定真实克重和所有隐形用油？",
+    "options": {
+      "a": "能精确确定",
+      "b": "不能，需用户核对份量和配方"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "meal_estimate"
+    ],
+    "query": "照片营养 份量",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "partial-diary",
+    "category": "nutrition",
+    "question": "只记录午餐就能断言用户全天热量不足吗？",
+    "options": {
+      "a": "可以",
+      "b": "不能，先确认当天记录覆盖度"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "diary_coverage"
+    ],
+    "query": "当天饮食 覆盖度",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "policy-source",
+    "category": "training",
+    "question": "练伴“两次符合条件工作组才进入渐进流程”应归为？",
+    "options": {
+      "a": "所有人都适用的ACSM统一规定",
+      "b": "练伴保守产品策略",
+      "c": "医学诊断标准"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "progression_policy"
+    ],
+    "query": "练伴 渐进调整策略",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "injury-scope",
+    "category": "training",
+    "question": "用户有伤病史时更合适的处理是？",
+    "options": {
+      "a": "完全禁止任何知识解释",
+      "b": "说明风险与适用边界，不能从录像诊断",
+      "c": "保证按通用计划训练不会受伤"
+    },
+    "expected": [
+      "b"
+    ],
+    "support_ids": [
+      "risk_policy"
+    ],
+    "query": "伤病风险提示",
+    "critical": true,
+    "abstain": false
+  },
+  {
+    "id": "unknown-rom",
+    "category": "abstention",
+    "question": "没有该用户的活动度测量数据，判断其右踝主动背屈精确为多少度。",
+    "options": {
+      "a": "10度",
+      "b": "20度",
+      "c": "30度"
+    },
+    "expected": [],
+    "support_ids": [],
+    "query": "踝 活动度",
+    "critical": true,
+    "abstain": true
+  },
+  {
+    "id": "unknown-activation",
+    "category": "abstention",
+    "question": "仅提供肌肉解剖起止点，判断某用户上一组卧推胸大肌肌电激活精确百分比。",
+    "options": {
+      "a": "30%",
+      "b": "60%",
+      "c": "90%"
+    },
+    "expected": [],
+    "support_ids": [],
+    "query": "胸大肌 激活",
+    "critical": true,
+    "abstain": true
+  },
+  {
+    "id": "unknown-book",
+    "category": "abstention",
+    "question": "未提供《力量训练基础》的作者、版次及正文，给出这本书卧推章节的精确页码。",
+    "options": {
+      "a": "第38页",
+      "b": "第95页",
+      "c": "第162页"
+    },
+    "expected": [],
+    "support_ids": [],
+    "query": "力量训练基础 页码",
+    "critical": true,
+    "abstain": true
+  },
+  {
+    "id": "unknown-diagnosis",
+    "category": "abstention",
+    "question": "用户只说“练完膝盖痛”，没有检查或其他资料，请确定唯一损伤诊断。",
+    "options": {
+      "a": "半月板撕裂",
+      "b": "髌腱断裂",
+      "c": "韧带撕裂"
+    },
+    "expected": [],
+    "support_ids": [],
+    "query": "伤病 视频 诊断",
+    "critical": true,
+    "abstain": true
+  },
+  {
+    "id":"scapulothoracic-type","category":"anatomy","question":"肩胛胸廓运动关系是否为独立典型滑膜关节？",
+    "options":{"a":"是，与盂肱关节完全相同","b":"不是，是功能性接触与滑动关系"},"expected":["b"],"support_ids":["scapulothoracic"],"query":"肩胛胸廓运动关系 滑膜关节","critical":true,"abstain":false
+  },
+  {
+    "id":"subscapularis-role","category":"anatomy","question":"肩胛下肌的主要肩旋转作用及主要止点是哪项？",
+    "options":{"a":"肩外旋；肱骨大结节","b":"肩内旋；肱骨小结节","c":"屈肘；尺骨鹰嘴"},"expected":["b"],"support_ids":["subscapularis"],"query":"肩胛下肌 起止点 作用","critical":false,"abstain":false
+  },
+  {
+    "id":"adductor-magnus-parts","category":"anatomy","question":"可以把大收肌所有肌束都统一描述为伸髋肌束吗？",
+    "options":{"a":"可以，全部肌束作用相同","b":"不可以，需要区分内收部和坐骨髁部"},"expected":["b"],"support_ids":["adductor_magnus"],"query":"大收肌 内收部 坐骨髁部","critical":true,"abstain":false
+  },
+  {
+    "id":"transverse-no-fake-joint","category":"anatomy","question":"腹横肌压缩腹部的作用能否直接伪装为单个关节的屈伸动作？",
+    "options":{"a":"能，等同于屈膝","b":"不能，应区分压缩支撑与关节动作"},"expected":["b"],"support_ids":["transversus_abdominis"],"query":"腹横肌 关节动作 压缩","critical":true,"abstain":false
+  },
+  {
+    "id":"wblt-unit","category":"measurement","question":"练伴膝触墙试点直接记录什么，是否可直接换算统一合格角度？",
+    "options":{"a":"第一脚趾到墙的距离cm；不可直接换算为统一合格角度","b":"测得每个关节的准确角度；所有人10cm都算合格"},"expected":["a"],"support_ids":["wblt_protocol"],"query":"负重膝触墙测量协议 cm 角度","critical":true,"abstain":false
+  },
+  {
+    "id":"wblt-protocol","category":"measurement","question":"膝触墙测量较符合本版协议的做法是哪项？",
+    "options":{"a":"脚跟离地，以最大距离作为唯一结果","b":"保持脚跟着地，左右侧分别练习与正式各3次，正式值取均值；疼痛时停止"},"expected":["b"],"support_ids":["wblt_protocol"],"query":"负重膝触墙测量协议 正式3次 均值","critical":true,"abstain":false
+  },
+  {
+    "id":"resting-energy-scope","category":"nutrition","question":"Mifflin–St Jeor计算出的静息能量值属于什么？",
+    "options":{"a":"公式估算，不能代表个人能量消耗实测","b":"个人每天真实消耗的无误差测量"},"expected":["a"],"support_ids":["nutrition_rule_resting_energy"],"query":"静息能量估算定量规则","critical":true,"abstain":false
+  },
+  {
+    "id":"activity-factor-policy","category":"nutrition","question":"练伴默认活动系数1.4应怎样表述？",
+    "options":{"a":"由用户训练天数准确推导的生理定值","b":"产品可调整起点，不是手表热量或实测消耗"},"expected":["b"],"support_ids":["nutrition_rule_activity_factor"],"query":"活动系数定量规则 1.4","critical":true,"abstain":false
+  },
+  {
+    "id":"protein-range-and-default","category":"nutrition","question":"练伴蛋白质默认1.6 g/kg/日与1.4–2.0范围应怎样区分？",
+    "options":{"a":"1.6为产品默认；1.4–2.0来自多数健康运动成人共识范围，个体需求可不同","b":"所有疾病与人群必须精确摄入1.6"},"expected":["a"],"support_ids":["nutrition_rule_protein"],"query":"蛋白质定量规则 1.6 1.4 2.0","critical":true,"abstain":false
+  },
+  {
+    "id":"fat-policy-scope","category":"nutrition","question":"练伴脂肪默认0.8 g/kg/日及允许范围属于什么？",
+    "options":{"a":"本产品分配策略，不宣称为所有人的临床阈值","b":"每个人相同的临床安全下限"},"expected":["a"],"support_ids":["nutrition_rule_fat"],"query":"脂肪定量规则 0.8","critical":true,"abstain":false
+  },
+  {
+    "id":"calibration-confirmation","category":"nutrition","question":"饮食趋势校准应怎样生效？",
+    "options":{"a":"把手表消耗直接叠加到目标热量，立即自动更新","b":"满足记录和授权条件后生成建议，用户确认后生效；不把7700 kcal/kg反推当成个人代谢实测"},"expected":["b"],"support_ids":["nutrition_rule_calibration"],"query":"趋势校准定量规则 确认","critical":true,"abstain":false
+  },
+  {
+    "id":"energy-guardrail-scope","category":"nutrition","question":"练伴自动目标范围应解释为什么？",
+    "options":{"a":"程序的自动计算边界，不能作为所有人的安全摄入下限","b":"对每个人都绝对安全且经临床验证的最低摄入"},"expected":["a"],"support_ids":["nutrition_rule_energy_guardrail"],"query":"自动目标范围定量规则","critical":true,"abstain":false
+  },
+  {
+    "id":"macro-approximation","category":"nutrition","question":"4/4/9宏量营养素换算可否替代食物库逐项热量和真实配方？",
+    "options":{"a":"可以，所有食品总是精确相同","b":"不能，本产品将其用于近似分配，不取代食物库逐项热量"},"expected":["b"],"support_ids":["nutrition_rule_macro_energy"],"query":"宏量营养素能量换算定量规则 4/4/9","critical":false,"abstain":false
+  },
+  {
+    "id":"cycle-executable-targets","category":"training","question":"本版一个可执行训练周需要保存哪些内容？",
+    "options":{"a":"只有一段周数说明，实际目标始终不变","b":"周、阶段、训练日，以及逐动作的组数、次数、重量、余力与休息目标"},"expected":["b"],"support_ids":["training_rule_cycle_week_targets"],"query":"逐周可执行目标","critical":false,"abstain":false
+  },
+  {
+    "id":"deload-policy-not-law","category":"training","question":"减量周中的某个固定降低比例应怎样描述？",
+    "options":{"a":"所有人的研究统一标准，不需要复核","b":"产品执行策略，应说明原因、内容、持续范围与后续复核，重大调整需确认"},"expected":["b"],"support_ids":["training_rule_deload_week"],"query":"减量周与退出复核","critical":true,"abstain":false
+  },
+  {
+    "id":"missed-training-truth","category":"training","question":"漏练或断训后怎样处理记录和安排？",
+    "options":{"a":"自动记作完成并把漏练量强行补到下一次","b":"保持未完成事实，按实际情况复核，不自动改写RM"},"expected":["b"],"support_ids":["training_rule_missed_sessions"],"query":"漏练与断训处理","critical":true,"abstain":false
+  },
+  {
+    "id":"readiness-not-rm","category":"training","question":"单次HRV下降或体脂秤变化足够证明最大力量下降吗？",
+    "options":{"a":"足够，应立即自动减少RM","b":"不足，只能作为辅助恢复证据，不等于RM变化"},"expected":["b"],"support_ids":["training_rule_readiness_limits"],"query":"恢复反馈与力量结论","critical":true,"abstain":false
+  },
+  {
+    "id":"cycle-reassessment-real-rm","category":"training","question":"训练周期结束后能否把完成工作组的增长直接存为新1RM？",
+    "options":{"a":"可以，完成增长就等于实测1RM增长","b":"不能；需结合最新画像、RM、完成记录复评下一周期，不伪造新RM"},"expected":["b"],"support_ids":["training_rule_cycle_reassessment"],"query":"周期结束后的复评","critical":true,"abstain":false
+  }
+]

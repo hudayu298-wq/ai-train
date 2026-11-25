@@ -56,10 +56,16 @@ class _ExerciseReferenceState extends State<ExerciseReference> {
             path.startsWith('/assets/exercise-demos/')) ...[
           const SizedBox(height: 12),
           AspectRatio(
-            aspectRatio: 720 / 420,
+            aspectRatio:
+                (demo['aspect_ratio'] as num?)?.toDouble() ?? 720 / 420,
             child: Image.network(
               Uri.parse('${widget.assetBase.replaceAll(RegExp(r'/+$'), '')}/')
-                  .resolve(still ? path.replaceAll('.gif', '.png') : path)
+                  .resolve(
+                    still
+                        ? (demo['poster_url'] ??
+                              path.replaceAll('.gif', '.png'))
+                        : path,
+                  )
                   .toString(),
               fit: BoxFit.contain,
               errorBuilder: (_, error, stack) =>
@@ -67,6 +73,11 @@ class _ExerciseReferenceState extends State<ExerciseReference> {
             ),
           ),
           Text(demo['label'] ?? '动作示意'),
+          if (demo['attribution'] is String)
+            Text(
+              demo['attribution'],
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           TextButton.icon(
             onPressed: () => setState(() => paused = !paused),
             icon: Icon(still ? Icons.play_arrow : Icons.pause),
@@ -74,6 +85,8 @@ class _ExerciseReferenceState extends State<ExerciseReference> {
           ),
         ] else if (widget.showDemo)
           const Text('该条目的示意动画待补充'),
+        if (e['classification'] is Map)
+          const Text('关节动作分类为规则推断，尚未逐项专业审核；演示不作为动作评分模板。'),
         list('准备姿势', technique['setup']),
         list('执行步骤', technique['execution']),
         list('变式细节', technique['key_points']),

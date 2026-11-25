@@ -26,8 +26,8 @@ def main():
             email = auth.EmailInput(email=args.email).email
             if conn.execute(select(d.users.c.id).where(d.users.c.email == email)).first():
                 raise SystemExit('Account already exists; no changes made.')
-            first = getpass('Password (15–128 characters): ')
-            if not 15 <= len(first) <= 128 or getpass('Repeat password: ') != first:
+            first = getpass('Password (6–128 characters): ')
+            if not 6 <= len(first) <= 128 or getpass('Repeat password: ') != first:
                 raise SystemExit('Password length or confirmation invalid; no changes made.')
             user = auth.new_user(conn, email, auth.passwords.hash(first), '运营者' if args.admin else '训练者')
             uid = user['id']

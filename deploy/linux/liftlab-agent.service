@@ -1,0 +1,23 @@
+[Unit]
+Description=Lianban coach followups and research evaluation worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=liftlab
+Group=liftlab
+WorkingDirectory=/opt/liftlab/current
+Environment=FIT_DATA_DIR=/var/lib/liftlab
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=Asia/Shanghai
+EnvironmentFile=/etc/liftlab/liftlab.env
+ExecStart=/opt/liftlab/current/.venv/bin/python /opt/liftlab/current/scripts/agent_worker.py
+TimeoutStartSec=35min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/liftlab
+UMask=0077
+

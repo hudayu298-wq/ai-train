@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../coach_avatar.dart';
+import '../coaches/coach_pet.dart';
+import '../ui_theme.dart';
 import 'session.dart';
 import 'wechat_login.dart';
 
@@ -20,7 +22,7 @@ class _LoginPageState extends State<LoginPage> {
       invite = TextEditingController();
   String mode = 'login';
   String? challenge, error, notice;
-  bool busy = false, agreed = false;
+  bool busy = false, agreed = false, obscurePassword = true;
   Map<String, dynamic>? config;
 
   @override
@@ -148,194 +150,260 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
+  Widget brandMark() => Row(
+    children: [
+      const CoachAvatar(size: 48, coachId: 'steady'),
+      const SizedBox(width: 12),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('练伴', style: Theme.of(context).textTheme.headlineSmall),
+          const Text(
+            'AI 私教与训练记录',
+            style: TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+        ],
+      ),
+    ],
+  );
+
+  Widget brandPanel() => Padding(
+    padding: const EdgeInsets.only(right: 64),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        brandMark(),
+        const SizedBox(height: 40),
+        Text(
+          '把每一次训练，\n练成自己的进步。',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          '和私教聊聊目标，确认适合你的计划。\n记录实际完成的每一组，再一起回顾。',
+          style: TextStyle(fontSize: 16, height: 1.8, color: AppColors.muted),
+        ),
+        const SizedBox(height: 28),
+        const CoachPet(coachId: 'steady', size: 138, animate: false),
+        const SizedBox(height: 16),
+        const Text('你的训练，每一次都有记录', style: TextStyle(color: AppColors.muted)),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Center(child: CoachAvatar(size: 112, coachId: 'steady')),
-                const SizedBox(height: 20),
-                const Text(
-                  '练伴',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                const Text('你的训练，每一次都有记录', textAlign: TextAlign.center),
-                const SizedBox(height: 28),
-                Text(switch (mode) {
-                  'register' => '创建账号',
-                  'reset' => '找回密码',
-                  _ => '欢迎回来',
-                }, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: email,
-                  enabled: !busy && challenge == null,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(labelText: '邮箱'),
-                ),
-                const SizedBox(height: 12),
-                if (mode != 'reset' || challenge != null) ...[
-                  TextField(
-                    controller: password,
-                    enabled: !busy && (challenge == null || mode == 'reset'),
-                    obscureText: true,
-                    autofillHints: [
-                      mode == 'login'
-                          ? AutofillHints.password
-                          : AutofillHints.newPassword,
-                    ],
-                    decoration: InputDecoration(
-                      labelText: mode == 'reset'
-                          ? '新密码（至少15个字符）'
-                          : mode == 'register'
-                          ? '密码（至少15个字符）'
-                          : '密码',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (config?['registration_open'] == false &&
-                    mode != 'reset' &&
-                    challenge == null) ...[
-                  TextField(
-                    controller: invite,
-                    enabled: !busy,
-                    decoration: const InputDecoration(labelText: '邀请码（新账号需要）'),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (challenge != null) ...[
-                  TextField(
-                    controller: code,
-                    enabled: !busy,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    decoration: const InputDecoration(
-                      labelText: '邮件验证码',
-                      helperText: '10分钟内有效；最多验证5次',
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            challenge = null;
-                            code.clear();
-                          }),
-                    child: const Text('返回修改 / 重新发送'),
-                  ),
-                ],
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: agreed,
-                  onChanged: busy
-                      ? null
-                      : (v) => setState(() => agreed = v ?? false),
-                  title: const Text('我已阅读并同意'),
-                ),
-                Wrap(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final wide = box.maxWidth >= 1000;
+          return Center(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(wide ? 48 : 20),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: wide ? 1000 : 440),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    TextButton(
-                      onPressed: busy ? null : () => policy('terms'),
-                      child: const Text('用户协议'),
-                    ),
-                    TextButton(
-                      onPressed: busy ? null : () => policy('privacy'),
-                      child: const Text('隐私政策'),
-                    ),
-                  ],
-                ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                if (notice != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(notice!),
-                  ),
-                FilledButton(
-                  onPressed: busy || config == null ? null : submit,
-                  child: Text(
-                    busy
-                        ? '请稍候…'
-                        : mode == 'login'
-                        ? '登录'
-                        : challenge == null
-                        ? '发送验证码'
-                        : mode == 'register'
-                        ? '验证并注册'
-                        : '重置密码',
-                  ),
-                ),
-                if (mode == 'login' && config?['wechat_enabled'] == true) ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('微信登录'),
-                    onPressed: busy || config == null
-                        ? null
-                        : () => run(() async {
-                            checkAgreement();
-                            if (config!['wechat_enabled'] != true) {
-                              throw Exception('微信登录尚未开通，请先使用邮箱登录');
-                            }
-                            await loginWithWechat(
-                              policyVersion: config!['policy_version'],
-                              inviteCode: invite.text,
-                            );
-                          }),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final item in const [
-                      ('login', '登录'),
-                      ('register', '创建账号'),
-                      ('reset', '忘记密码'),
-                    ])
-                      if (mode != item.$1)
-                        TextButton(
-                          onPressed: busy
-                              ? null
-                              : () => setState(() {
-                                  mode = item.$1;
-                                  challenge = error = notice = null;
-                                  code.clear();
-                                  password.clear();
-                                }),
-                          child: Text(item.$2),
+                    if (wide) Expanded(child: brandPanel()),
+                    Flexible(
+                      child: Material(
+                        color: AppColors.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: const BorderSide(color: AppColors.line),
                         ),
-                    if (config == null)
-                      TextButton(
-                        onPressed: loadConfig,
-                        child: const Text('重试连接'),
+                        child: Padding(
+                          padding: EdgeInsets.all(wide ? 32 : 24),
+                          child: AutofillGroup(
+                            child: loginForm(compact: !wide),
+                          ),
+                        ),
                       ),
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     ),
+  );
+
+  Widget loginForm({required bool compact}) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (compact) ...[brandMark(), const SizedBox(height: 28)],
+      Text(switch (mode) {
+        'register' => '创建账号',
+        'reset' => '找回密码',
+        _ => '欢迎回来',
+      }, style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 18),
+      TextField(
+        controller: email,
+        enabled: !busy && challenge == null,
+        keyboardType: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
+        decoration: const InputDecoration(labelText: '邮箱'),
+      ),
+      const SizedBox(height: 12),
+      if (mode != 'reset' || challenge != null) ...[
+        TextField(
+          controller: password,
+          enabled: !busy && (challenge == null || mode == 'reset'),
+          obscureText: obscurePassword,
+          autofillHints: [
+            mode == 'login'
+                ? AutofillHints.password
+                : AutofillHints.newPassword,
+          ],
+          decoration: InputDecoration(
+            suffixIcon: IconButton(
+              tooltip: obscurePassword ? '显示密码' : '隐藏密码',
+              onPressed: () =>
+                  setState(() => obscurePassword = !obscurePassword),
+              icon: Icon(
+                obscurePassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 20,
+              ),
+            ),
+            labelText: mode == 'reset'
+                ? '新密码（至少6个字符）'
+                : mode == 'register'
+                ? '密码（至少6个字符）'
+                : '密码',
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (config?['registration_open'] == false &&
+          (mode == 'register' ||
+              (mode == 'login' && config?['wechat_enabled'] == true)) &&
+          challenge == null) ...[
+        TextField(
+          controller: invite,
+          enabled: !busy,
+          decoration: const InputDecoration(labelText: '邀请码（新账号需要）'),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (challenge != null) ...[
+        TextField(
+          controller: code,
+          enabled: !busy,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          decoration: const InputDecoration(
+            labelText: '邮件验证码',
+            helperText: '10分钟内有效；最多验证5次',
+          ),
+        ),
+        TextButton(
+          onPressed: busy
+              ? null
+              : () => setState(() {
+                  challenge = null;
+                  code.clear();
+                }),
+          child: const Text('返回修改 / 重新发送'),
+        ),
+      ],
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        value: agreed,
+        onChanged: busy ? null : (v) => setState(() => agreed = v ?? false),
+        title: const Text('我已阅读并同意'),
+      ),
+      Wrap(
+        children: [
+          TextButton(
+            onPressed: busy ? null : () => policy('terms'),
+            child: const Text('用户协议'),
+          ),
+          TextButton(
+            onPressed: busy ? null : () => policy('privacy'),
+            child: const Text('隐私政策'),
+          ),
+        ],
+      ),
+      if (error != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      if (notice != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(notice!),
+        ),
+      FilledButton(
+        onPressed: busy || config == null ? null : submit,
+        child: Text(
+          busy
+              ? '请稍候…'
+              : mode == 'login'
+              ? '登录'
+              : challenge == null
+              ? '发送验证码'
+              : mode == 'register'
+              ? '验证并注册'
+              : '重置密码',
+        ),
+      ),
+      if (mode == 'login' && config?['wechat_enabled'] == true) ...[
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.chat_bubble_outline),
+          label: const Text('微信登录'),
+          onPressed: busy || config == null
+              ? null
+              : () => run(() async {
+                  checkAgreement();
+                  if (config!['wechat_enabled'] != true) {
+                    throw Exception('微信登录尚未开通，请先使用邮箱登录');
+                  }
+                  await loginWithWechat(
+                    policyVersion: config!['policy_version'],
+                    inviteCode: invite.text,
+                  );
+                }),
+        ),
+      ],
+      const SizedBox(height: 12),
+      Wrap(
+        alignment: WrapAlignment.center,
+        children: [
+          for (final item in const [
+            ('login', '登录'),
+            ('register', '创建账号'),
+            ('reset', '忘记密码'),
+          ])
+            if (mode != item.$1)
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () => setState(() {
+                        mode = item.$1;
+                        challenge = error = notice = null;
+                        code.clear();
+                        password.clear();
+                      }),
+                child: Text(item.$2),
+              ),
+          if (config == null)
+            TextButton(onPressed: loadConfig, child: const Text('重试连接')),
+        ],
+      ),
+    ],
   );
 }

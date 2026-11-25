@@ -11,3 +11,6 @@ alembic>=1.14,<2
 PyJWT>=2.10,<3
 pwdlib[argon2]>=0.2,<1
 cryptography>=44,<48
+onnxruntime==1.31.0
+tokenizers==0.23.3
+redis==8.1.0

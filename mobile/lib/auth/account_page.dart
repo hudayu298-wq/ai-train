@@ -192,7 +192,7 @@ class _AccountPageState extends State<AccountPage> {
         TextField(
           controller: newPassword,
           obscureText: true,
-          decoration: const InputDecoration(labelText: '新密码（至少15个字符）'),
+          decoration: const InputDecoration(labelText: '新密码（至少6个字符）'),
         ),
         TextButton(
           onPressed: busy

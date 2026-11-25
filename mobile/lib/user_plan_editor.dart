@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'cycle_plan_panel.dart';
+import 'training_plan_overview.dart';
+
 class UserPlanEditor extends StatefulWidget {
   const UserPlanEditor({
     super.key,
@@ -11,6 +14,7 @@ class UserPlanEditor extends StatefulWidget {
     this.autoGenerate = false,
     this.exerciseDetails = const {},
     this.currentPlan,
+    this.onCompleteProfile,
   });
   final Future<dynamic> Function(String, Map<String, dynamic>) post;
   final Future<void> Function() onSaved;
@@ -19,6 +23,7 @@ class UserPlanEditor extends StatefulWidget {
   final List<dynamic> rmRecords;
   final bool compact, autoGenerate;
   final Map<String, dynamic>? currentPlan;
+  final VoidCallback? onCompleteProfile;
   @override
   State<UserPlanEditor> createState() => _UserPlanEditorState();
 }
@@ -30,6 +35,11 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   final sets = TextEditingController();
   final reps = TextEditingController();
   final rest = TextEditingController();
+  final rir = TextEditingController();
+  final dayGoal = TextEditingController();
+  final dayMetadata = <String, Map<String, dynamic>>{};
+  String selectedFocus = 'full_body', selectedMethod = 'straight_sets';
+  String? selectedPrimary;
   String exercise = 'bench';
   String movementCategory = '', bodyRegion = '';
   bool busy = false, editingCurrent = false;
@@ -63,6 +73,12 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   String movementFor(String id) =>
       widget.exerciseDetails[id]?['movement_pattern'] as String? ?? '未分类';
 
+  List<String> movementsFor(String id) =>
+      (widget.exerciseDetails[id]?['joint_action_categories'] as List?)
+          ?.map((v) => '$v')
+          .toList() ??
+      [movementFor(id)];
+
   List<String> regionsFor(String id) =>
       (widget.exerciseDetails[id]?['body_regions'] as List? ?? [])
           .map((v) => '$v')
@@ -73,7 +89,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           .where(
             (id) => bodyRegion.isEmpty || regionsFor(id).contains(bodyRegion),
           )
-          .map(movementFor)
+          .expand(movementsFor)
           .toSet()
           .toList()
         ..sort());
@@ -82,7 +98,8 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
       (widget.exercises.keys
           .where(
             (id) =>
-                movementCategory.isEmpty || movementFor(id) == movementCategory,
+                movementCategory.isEmpty ||
+                movementsFor(id).contains(movementCategory),
           )
           .expand(regionsFor)
           .toSet()
@@ -92,7 +109,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   Map<String, String> get filteredExercises => {
     for (final e in widget.exercises.entries)
       if ((movementCategory.isEmpty ||
-              movementFor(e.key) == movementCategory) &&
+              movementsFor(e.key).contains(movementCategory)) &&
           (bodyRegion.isEmpty || regionsFor(e.key).contains(bodyRegion)))
         e.key: e.value,
   };
@@ -118,7 +135,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
   @override
   void didUpdateWidget(covariant UserPlanEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final allCategories = widget.exercises.keys.map(movementFor).toSet();
+    final allCategories = widget.exercises.keys.expand(movementsFor).toSet();
     if (!allCategories.contains(movementCategory)) movementCategory = '';
     if (!bodyRegions.contains(bodyRegion)) bodyRegion = '';
     normalizeExerciseSelection();
@@ -126,7 +143,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
 
   @override
   void dispose() {
-    for (final c in [title, day, weight, sets, reps, rest]) {
+    for (final c in [title, day, weight, sets, reps, rest, rir, dayGoal]) {
       c.dispose();
     }
     super.dispose();
@@ -216,8 +233,9 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           'sets',
           'reps',
           'rest_seconds',
+          'target_rir',
         ])
-          k: e[k],
+          if (k != 'target_rir' || e[k] != null) k: e[k],
       });
     }
     return {
@@ -233,8 +251,39 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
             for (final original
                 in (aiDraft ?? widget.currentPlan)?['days'] ?? [])
               if (original['name'] == d.key)
-                for (final key in ['weekday', 'start_time', 'duration_minutes'])
+                for (final key in [
+                  'weekday',
+                  'start_time',
+                  'duration_minutes',
+                  'focus',
+                  'session_goal',
+                  'training_method',
+                  'primary_exercise_id',
+                ])
                   if (original[key] != null) key: original[key],
+            ...?dayMetadata[d.key],
+          },
+      ],
+    };
+  }
+
+  Map<String, dynamic> previewPlan(Map<String, dynamic> source) {
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final e in entries) {
+      groups.putIfAbsent(e['day'], () => []).add(e);
+    }
+    return {
+      ...source,
+      'name': title.text,
+      'days': [
+        for (final group in groups.entries)
+          {
+            for (final original in source['days'] ?? [])
+              if (original['name'] == group.key)
+                ...Map<String, dynamic>.from(original),
+            'name': group.key,
+            'exercises': group.value,
+            ...?dayMetadata[group.key],
           },
       ],
     };
@@ -250,6 +299,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           s = integer(sets),
           r = integer(reps),
           pause = integer(rest);
+      final reserve = rir.text.trim().isEmpty ? null : integer(rir);
       if ((w != null && (w <= 0 || w > 500)) ||
           s < 1 ||
           s > 20 ||
@@ -259,6 +309,9 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           pause > 1800) {
         throw Exception('请检查重量、组次和休息范围');
       }
+      if (reserve != null && (reserve < 0 || reserve > 10)) {
+        throw Exception('余力请填写0至10次，或留空待确认');
+      }
       setState(() {
         final e = {
           'day': day.text.trim(),
@@ -267,6 +320,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           'sets': s,
           'reps': r,
           'rest_seconds': pause,
+          'target_rir': reserve,
         };
         if (editing == null) {
           entries.add(e);
@@ -282,6 +336,29 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     }
   }
 
+  void updateDayDetails() {
+    final name = day.text.trim();
+    final ids = entries
+        .where((e) => e['day'] == name)
+        .map((e) => '${e['exercise_id']}')
+        .toList();
+    setState(() {
+      if (ids.isEmpty || dayGoal.text.trim().isEmpty) {
+        message = '请先添加该训练日的动作，并填写本次训练目标';
+        return;
+      }
+      dayMetadata[name] = {
+        'focus': selectedFocus,
+        'session_goal': dayGoal.text.trim(),
+        'training_method': selectedMethod,
+        'primary_exercise_id': ids.contains(selectedPrimary)
+            ? selectedPrimary
+            : ids.first,
+      };
+      message = '已更新该训练日说明，确认保存计划后生效';
+    });
+  }
+
   Future<void> generate() => run(() async {
     final result = Map<String, dynamic>.from(
       await widget.post('/plans/generate', {}),
@@ -292,6 +369,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
       generationId = result['generation_id'];
       basePlanId = null;
       title.text = result['name'];
+      dayMetadata.clear();
       entries.clear();
       for (final d in result['days']) {
         for (final e in d['exercises']) {
@@ -328,6 +406,28 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     const Text('重量为空表示待确认；开始该动作前应先填写合适的负荷。'),
     field('计划名称', title, text: true),
     field('训练日名称（如周一）', day, text: true),
+    ExpansionTile(
+      title: const Text('编辑该训练日的目标与训练法'),
+      children: [
+        field('本次训练目标', dayGoal, text: true),
+        selector(
+          '本次训练部位',
+          selectedFocus,
+          (v) => selectedFocus = v,
+          options: focusLabels,
+        ),
+        selector(
+          '本次训练法',
+          selectedMethod,
+          (v) => selectedMethod = v,
+          options: {...methodChoices}..remove('auto'),
+        ),
+        OutlinedButton(
+          onPressed: busy ? null : updateDayDetails,
+          child: const Text('更新训练日说明'),
+        ),
+      ],
+    ),
     selector(
       '关节动作分类',
       movementCategory,
@@ -373,6 +473,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
     field('组数', sets),
     field('每组次数', reps),
     field('组间休息 / 秒', rest),
+    field('目标余力 / 次（可留空）', rir),
     OutlinedButton(
       onPressed: busy || !filteredExercises.containsKey(exercise)
           ? null
@@ -386,7 +487,7 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
           '${entries[i]['day']} · ${widget.exercises[entries[i]['exercise_id']]}',
         ),
         subtitle: Text(
-          '${entries[i]['weight_kg'] == null ? '重量待确认' : '${entries[i]['weight_kg']}kg'} · ${entries[i]['sets']} × ${entries[i]['reps']} · 休息${entries[i]['rest_seconds']}秒',
+          '${entries[i]['weight_kg'] == null ? '重量待确认' : '${entries[i]['weight_kg']}kg'} · ${entries[i]['sets']} × ${entries[i]['reps']} · 余力${entries[i]['target_rir'] ?? '待确认'}次 · 休息${entries[i]['rest_seconds']}秒',
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -399,6 +500,21 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                       final e = entries[i];
                       editing = i;
                       day.text = e['day'];
+                      final original =
+                          dayMetadata[e['day']] ??
+                          Map<String, dynamic>.from(
+                            ((aiDraft ?? widget.currentPlan)?['days']
+                                            as List? ??
+                                        [])
+                                    .where((d) => d['name'] == e['day'])
+                                    .firstOrNull ??
+                                {},
+                          );
+                      dayGoal.text = '${original['session_goal'] ?? ''}';
+                      selectedFocus = original['focus'] ?? 'full_body';
+                      selectedMethod =
+                          original['training_method'] ?? 'straight_sets';
+                      selectedPrimary = original['primary_exercise_id'];
                       exercise = e['exercise_id'];
                       movementCategory = '';
                       bodyRegion = '';
@@ -408,6 +524,9 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
                       sets.text = '${e['sets']}';
                       reps.text = '${e['reps']}';
                       rest.text = '${e['rest_seconds']}';
+                      rir.text = e['target_rir'] == null
+                          ? ''
+                          : '${e['target_rir']}';
                     }),
             ),
             IconButton(
@@ -459,14 +578,28 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
         children: [
           Text('AI 制定训练计划', style: Theme.of(context).textTheme.titleLarge),
           const Text(
-            '根据每周训练日、可用时间、目标和力量水平生成整体周期计划。点击生成会将画像及RM发送到已配置的模型服务，并替换当前未保存草稿；已保存的计划保留。',
+            '先在画像补齐胸、背、腿力量参考，再结合训练日、目标与器械生成具体负重建议。点击生成会将画像、力量参考及RM发送到已配置的模型，并替换未保存草稿。',
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            icon: const Icon(Icons.auto_awesome),
-            label: Text(busy ? '处理中…' : '根据画像生成 AI 计划'),
-            onPressed: busy ? null : generate,
-          ),
+          if (widget.onCompleteProfile != null)
+            TextButton.icon(
+              onPressed: busy ? null : widget.onCompleteProfile,
+              icon: const Icon(Icons.person_outline),
+              label: const Text('完善画像与胸背腿力量评估'),
+            ),
+          if (widget.currentPlan == null)
+            FilledButton.icon(
+              icon: const Icon(Icons.auto_awesome),
+              label: Text(busy ? '处理中…' : '根据画像生成 AI 计划'),
+              onPressed: busy ? null : generate,
+            )
+          else
+            OutlinedButton.icon(
+              icon: const Icon(Icons.auto_awesome),
+              label: Text(busy ? '处理中…' : '根据画像生成 AI 计划'),
+              onPressed: busy ? null : generate,
+            ),
+          const SizedBox(height: 12),
           if (busy) const LinearProgressIndicator(),
           if (message != null)
             Padding(
@@ -474,16 +607,55 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
               child: Text(message!),
             ),
           if (aiDraft != null) ...[
-            Text('制定理由：${aiDraft!['rationale']}'),
-            if (aiDraft!['cycle_weeks'] != null)
-              Text('${aiDraft!['cycle_weeks']}周整体周期'),
-            for (final week in aiDraft!['weeks'] ?? []) Text('$week'),
-            for (final warning in aiDraft!['risk_warnings'] ?? [])
-              Text('风险提示：$warning'),
-            Text('热身：${aiDraft!['warmup']}'),
-            Text('恢复：${aiDraft!['recovery']}'),
-            Text('调整建议：${aiDraft!['progression']}'),
+            TrainingPlanOverview(
+              plan: previewPlan(aiDraft!),
+              exercises: widget.exercises,
+            ),
+            if ((aiDraft!['risk_warnings'] as List? ?? []).isNotEmpty)
+              ExpansionTile(
+                initiallyExpanded: true,
+                title: Text(
+                  '需留意 · ${(aiDraft!['risk_warnings'] as List).length}项',
+                ),
+                children: [
+                  for (final warning in aiDraft!['risk_warnings'])
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('风险提示：$warning'),
+                    ),
+                ],
+              ),
+            ExpansionTile(
+              title: const Text('制定依据、热身与恢复'),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('制定理由：${aiDraft!['rationale']}'),
+                      Text('热身：${aiDraft!['warmup']}'),
+                      Text('恢复：${aiDraft!['recovery']}'),
+                      Text('调整建议：${aiDraft!['progression']}'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            CycleSchedulePreview(plan: aiDraft!, exercises: widget.exercises),
           ],
+          if (widget.currentPlan != null && aiDraft == null)
+            ExpansionTile(
+              title: const Text('周期进度与操作'),
+              children: [
+                CyclePlanPanel(
+                  plan: widget.currentPlan!,
+                  exercises: widget.exercises,
+                  post: widget.post,
+                  onSaved: widget.onSaved,
+                ),
+              ],
+            ),
           if (widget.currentPlan != null && widget.compact && aiDraft == null)
             OutlinedButton.icon(
               onPressed: busy
@@ -493,18 +665,12 @@ class _UserPlanEditorState extends State<UserPlanEditor> {
               label: const Text('修改当前计划'),
             ),
           if (!widget.compact || aiDraft != null || editingCurrent) ...[
+            if (editingCurrent && aiDraft == null && widget.currentPlan != null)
+              TrainingPlanOverview(
+                plan: previewPlan(widget.currentPlan!),
+                exercises: widget.exercises,
+              ),
             if (widget.compact) ...[
-              Text(title.text, style: Theme.of(context).textTheme.titleLarge),
-              for (final e in entries)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    '${e['day']} · ${widget.exercises[e['exercise_id']] ?? e['exercise_id']}',
-                  ),
-                  subtitle: Text(
-                    '${e['weight_kg'] ?? '待确认'} kg · ${e['sets']}组 × ${e['reps']}次 · 休息${e['rest_seconds']}秒',
-                  ),
-                ),
               confirmButton(),
               ExpansionTile(
                 title: const Text('调整动作与负荷'),

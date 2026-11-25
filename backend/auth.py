@@ -26,7 +26,7 @@ except ImportError:
 
 passwords = PasswordHash.recommended()
 DUMMY_HASH = passwords.hash(secrets.token_urlsafe(32))
-POLICY_VERSION = '2026-10-18'
+POLICY_VERSION = '2026-10-19'
 PUBLIC = {'/api/health', '/api/auth/config', '/api/auth/policies', '/api/auth/register', '/api/auth/register/verify',
           '/api/auth/login', '/api/auth/refresh', '/api/auth/password/forgot',
           '/api/auth/password/reset', '/api/auth/wechat/start', '/api/auth/wechat/exchange'}
@@ -86,7 +86,7 @@ class EmailInput(Input):
 
 
 class Register(EmailInput):
-    password: str = Field(min_length=15, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
     policy_version: str = Field(max_length=40)
     invite_code: str = Field(default='', max_length=200)
 
@@ -107,16 +107,16 @@ class Refresh(Input):
 
 
 class PasswordReset(Verify):
-    password: str = Field(min_length=15, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class PasswordChange(Input):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=15, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
 
 
 class EmailChange(EmailInput):
-    password: str | None = Field(default=None, min_length=15, max_length=128)
+    password: str | None = Field(default=None, min_length=6, max_length=128)
 
 
 class WechatStart(Input):
@@ -237,7 +237,8 @@ def install_middleware(app, path):
                 request.state.user = user
                 if url.startswith('/api/library') and request.method not in ('GET', 'HEAD') and user['role'] != 'admin':
                     raise HTTPException(403, '仅管理员可维护系统资料库')
-                if request.method == 'POST' and (url in ('/api/plans/generate', '/api/movement/analyze', '/api/coach/messages') or url.endswith('/review')):
+                if request.method == 'POST' and (url in ('/api/plans/generate', '/api/movement/analyze', '/api/coach/messages', '/api/agent/runs')
+                        or url.endswith(('/review', '/progression', '/evaluate', '/optimize', '/resume', '/analyze'))):
                     await run_in_threadpool(rate_limit, path, 'ai:' + user['id'], 6, 60)
                     await run_in_threadpool(rate_limit, path, 'ai-day:' + user['id'], 100, 86400)
                     def acquire():
@@ -324,6 +325,9 @@ def router(path, data_dir):
             'privacy': '练伴隐私政策（内测草案）\n\n账号信息、画像、饮食、聊天和训练记录用于提供私教服务。'
                 '用户主动调用 AI 功能时，相关对话、画像和训练上下文会发送给已配置的模型服务商；'
                 '视觉分析仅在用户主动上传或提交截图时发送相关素材。微信登录通过微信验证账号身份。'
+                '私教任务会保存使用的上下文、工具步骤与待确认操作，确认的训练会触发后台复盘。'
+                '健康测量保存与发送AI摘要分别征求授权，可在健康与恢复中关闭授权或删除测量。'
+                '仅在你勾选共享时，反馈分类计数用于全局策略改进，不共享原始对话。'
                 '我们不将私人记录作为公开资料库内容。你可以在账号与安全中导出记录或注销账号。'
                 '注销立即撤销登录并清除在线个人记录与已记录媒体；备份按既定保留周期到期清除。'
                 '相机、通知等权限在功能使用时按系统提示申请，你可以在系统设置撤回。'
@@ -464,7 +468,7 @@ def router(path, data_dir):
                 raise HTTPException(403, '请重新登录后在5分钟内绑定邮箱')
             current = request.state.user
             if not current['password_hash'] and not body.password:
-                raise HTTPException(422, '请设置至少15个字符的邮箱登录密码')
+                raise HTTPException(422, '请设置至少6个字符的邮箱登录密码')
             exists = conn.execute(select(d.users.c.id).where(d.users.c.email == body.email, d.users.c.id != d.owner())).first()
             cid = secrets.token_urlsafe(32)
             if not exists:
@@ -525,8 +529,11 @@ def router(path, data_dir):
     def export():
         with d.connection(path) as store:
             rows = store.conn.execute(select(d.records_table.c.kind, d.records_table.c.id,
-                d.records_table.c.payload).where(d.records_table.c.user_id == d.owner())).mappings()
+                d.records_table.c.payload).where(d.records_table.c.user_id == d.owner(),
+                    d.records_table.c.kind.not_in(('cache_meta','privacy_meta')))).mappings()
             return {'exported_at': d.now(), 'records': list(rows),
+                'health_measurements': list(store.conn.execute(select(d.measurements.c.id, d.measurements.c.payload)
+                    .where(d.measurements.c.user_id == d.owner())).mappings()),
                 'media_note': '媒体元数据包含于记录中，文件通过本人授权的媒体下载接口获取'}
 
     @api.delete('/me')
@@ -545,9 +552,12 @@ def router(path, data_dir):
             # Keep a disabled tombstone so in-flight model calls cannot recreate user data.
             conn.execute(update(d.users).where(d.users.c.id == d.owner()).values(active=False,
                 email=None, password_hash=None, display_name='已注销用户'))
-            for table in (d.records_table, d.identities, d.sessions, d.consents):
+            for table in (d.measurements,d.ai_leases,d.records_table, d.identities, d.sessions, d.consents):
                 conn.execute(delete(table).where(table.c.user_id == d.owner()))
         root = (data_dir / 'uploads').resolve()
+        try:from .services import cache
+        except ImportError:from services import cache
+        cache.purge_private(cache.database_scope(d.get_engine(path).url),d.owner())
         for item in files:
             target = (root / item.get('stored_name', '')).resolve()
             if target.parent == root and target.is_file():

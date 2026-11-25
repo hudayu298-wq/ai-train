@@ -13,6 +13,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, insert, select, update
+from backend.test_support import assert_isolated_database
+
+assert_isolated_database()
 
 # If the business suite was loaded first, share its isolated application.
 if 'app' not in sys.modules:
@@ -67,8 +70,8 @@ def test_register_verification_is_single_use_and_does_not_leak_password():
     assert result.status_code == 200
     assert result.json()['user']['email'] == body['email']
     assert client.post('/api/auth/register/verify', json=verify).status_code == 400
-    invalid = client.post('/api/auth/register', json={**body, 'password': 'do-not-echo-me'})
-    assert invalid.status_code == 422 and 'do-not-echo-me' not in invalid.text
+    invalid = client.post('/api/auth/register', json={**body, 'password': 'short'})
+    assert invalid.status_code == 422 and 'short' not in invalid.text
 
 
 def test_wrong_verification_attempts_are_committed():
@@ -234,3 +237,35 @@ def test_postgres_concurrent_refresh_only_one_succeeds():
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: client.post('/api/auth/refresh', json={'refresh_token': tokens['refresh_token']}).status_code, range(2)))
     assert sorted(statuses) == [200, 401]
+
+
+@pytest.mark.parametrize('model,field,extra', [
+    (auth.Register, 'password', {'email': 'six@example.test', 'policy_version': auth.POLICY_VERSION}),
+    (auth.PasswordReset, 'password', {'challenge_id': 'x' * 32, 'code': '123456'}),
+    (auth.PasswordChange, 'new_password', {'current_password': PASSWORD}),
+    (auth.EmailChange, 'password', {'email': 'six@example.test'}),
+])
+def test_password_length_boundaries(model, field, extra):
+    from pydantic import ValidationError
+    for value in ('123456', 'abcdef', 'x' * 128):
+        assert getattr(model(**extra, **{field: value}), field) == value
+    for value in ('12345', 'x' * 129):
+        with pytest.raises(ValidationError):
+            model(**extra, **{field: value})
+
+
+def test_change_to_six_digit_password_checks_current_and_revokes_all_sessions():
+    tokens = user()
+    other_device = client.post('/api/auth/login', json={'email': 'a@example.test', 'password': PASSWORD}).json()
+    for current, new, status in [(PASSWORD, '12345', 422), ('wrong-password', '123456', 400)]:
+        response = client.post('/api/auth/password/change', headers=headers(tokens),
+            json={'current_password': current, 'new_password': new})
+        assert response.status_code == status
+        assert client.get('/api/me', headers=headers(tokens)).status_code == 200
+    assert client.post('/api/auth/password/change', headers=headers(tokens),
+        json={'current_password': PASSWORD, 'new_password': '123456'}).status_code == 200
+    for device in (tokens, other_device):
+        assert client.get('/api/me', headers=headers(device)).status_code == 401
+        assert client.post('/api/auth/refresh', json={'refresh_token': device['refresh_token']}).status_code == 401
+    assert client.post('/api/auth/login', json={'email': 'a@example.test', 'password': PASSWORD}).status_code == 401
+    assert client.post('/api/auth/login', json={'email': 'a@example.test', 'password': '123456'}).status_code == 200

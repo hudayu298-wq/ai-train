@@ -20,6 +20,7 @@ void main() {
                 exerciseDetails: const {
                   'bench': {
                     'movement_pattern': '水平推',
+                    'joint_action_categories': ['肩关节：水平内收', '肘关节：伸展'],
                     'body_regions': ['胸部', '手臂'],
                     'weight_basis': '含杠铃总重量',
                   },
@@ -75,11 +76,11 @@ void main() {
       expect(options('训练部位'), ['', '手臂']);
       final add = find.widgetWithText(OutlinedButton, '添加到计划');
       await choose('训练部位', '手臂');
-      expect(options('关节动作分类'), containsAll(['', '水平推', '肘屈曲']));
+      expect(options('关节动作分类'), containsAll(['', '肩关节：水平内收', '肘关节：伸展', '肘屈曲']));
       expect(options('关节动作分类'), isNot(contains('膝主导蹲')));
       await choose('关节动作分类', '全部关节动作');
       await choose('训练部位', '胸部');
-      expect(options('关节动作分类'), ['', '水平推']);
+      expect(options('关节动作分类'), ['', '肘关节：伸展', '肩关节：水平内收']);
       expect(options('计划动作'), ['bench']);
       await tester.ensureVisible(find.text('清除动作筛选'));
       await tester.tap(find.text('清除动作筛选'));
@@ -109,7 +110,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(add);
       await tester.pumpAndSettle();
-      await choose('关节动作分类', '水平推');
+      await choose('关节动作分类', '肩关节：水平内收');
       await tester.ensureVisible(find.byIcon(Icons.edit_outlined));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.edit_outlined));
@@ -265,6 +266,9 @@ void main() {
     await tester.tap(find.text('根据画像生成 AI 计划'));
     await tester.pumpAndSettle();
     expect(requests, ['/plans/generate']);
+    await tester.ensureVisible(find.text('制定依据、热身与恢复'));
+    await tester.tap(find.text('制定依据、热身与恢复'));
+    await tester.pumpAndSettle();
     expect(find.text('制定理由：根据画像生成'), findsOneWidget);
     await tester.ensureVisible(find.text('保存我的计划并评估'));
     await tester.pumpAndSettle();

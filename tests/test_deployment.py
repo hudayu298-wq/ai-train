@@ -10,7 +10,8 @@ from scripts.backup_data import create_backup
 from scripts import package_backend
 
 
-def test_backup_copies_committed_sqlite_rows_and_uploaded_files(tmp_path):
+def test_backup_copies_committed_sqlite_rows_and_uploaded_files(tmp_path,monkeypatch):
+    monkeypatch.setenv('DATABASE_URL','')
     data = tmp_path / 'data'
     data.mkdir()
     (data / 'uploads').mkdir()
@@ -33,7 +34,8 @@ def test_backup_copies_committed_sqlite_rows_and_uploaded_files(tmp_path):
         assert db.execute('SELECT value FROM records').fetchall() == [('committed',)]
 
 
-def test_backup_retention_preserves_unrelated_files_and_rejects_nested_output(tmp_path):
+def test_backup_retention_preserves_unrelated_files_and_rejects_nested_output(tmp_path,monkeypatch):
+    monkeypatch.setenv('DATABASE_URL','')
     data = tmp_path / 'data'
     data.mkdir()
     with closing(sqlite3.connect(data / 'fitness.db')) as db:
@@ -71,6 +73,8 @@ def test_deployment_archive_contains_seed_data_but_excludes_runtime_and_credenti
         'scripts/backup_data.py': '# backup script\n',
         'scripts/send_mail.py': '# mail worker\n',
         'scripts/manage_account.py': '# interactive operator tool\n',
+        'scripts/agent_worker.py': '# bounded agent/research worker\n',
+        'scripts/download_retrieval_models.py': '# pinned model assets\n',
         'alembic.ini': '[alembic]\n',
         '.tools/credentials.txt': 'private-local-tools',
     }
@@ -86,7 +90,7 @@ def test_deployment_archive_contains_seed_data_but_excludes_runtime_and_credenti
         names = set(archive.getnames())
         assert names == {'.env.example', 'backend/app.py', 'backend/data/foods.json',
                          'backend/data/exercises.json', 'preview/index.html',
-                         'deploy/linux/install.sh', 'scripts/backup_data.py', 'scripts/send_mail.py', 'scripts/manage_account.py', 'alembic.ini', 'RELEASE.json'}
+                         'deploy/linux/install.sh', 'scripts/backup_data.py', 'scripts/send_mail.py', 'scripts/manage_account.py', 'scripts/agent_worker.py', 'scripts/download_retrieval_models.py', 'alembic.ini', 'RELEASE.json'}
         manifest = json.load(archive.extractfile('RELEASE.json'))
         assert manifest['working_tree_dirty'] is True
         assert set(manifest['files']) == names - {'RELEASE.json'}

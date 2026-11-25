@@ -38,6 +38,107 @@ void main() {
   };
 
   testWidgets(
+    'plan targets stay separate and runner writes only confirmed draft values',
+    (tester) async {
+      await largeView(tester);
+      Map? submitted;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WorkoutLogPage(
+            request: (path, method, body) async {
+              if (path == '/workouts/start') {
+                return {
+                  'id': 'execution-1',
+                  'plan_snapshot': {
+                    'id': 'plan-1',
+                    'version': 1,
+                    'days': [
+                      {
+                        'name': '周一',
+                        'exercises': [
+                          {
+                            'exercise_id': 'bench',
+                            'sets': 1,
+                            'weight_kg': 75,
+                            'reps': 5,
+                            'rest_seconds': 60,
+                            'target_rir': 2,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  'started_at': '2026-10-24T10:00:00Z',
+                };
+              }
+              if (path != '/workouts') throw Exception('模型未配置');
+              submitted = body as Map;
+              return response(submitted!);
+            },
+            onSaved: () async {},
+            exercises: exercises,
+            coachId: 'gentle',
+            currentPlan: const {
+              'id': 'plan-1',
+              'days': [
+                {
+                  'name': '周一',
+                  'exercises': [
+                    {
+                      'exercise_id': 'bench',
+                      'sets': 1,
+                      'weight_kg': 75,
+                      'reps': 5,
+                      'rest_seconds': 60,
+                      'target_rir': 2,
+                    },
+                  ],
+                },
+              ],
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final daySelector = find.byWidgetPredicate(
+        (w) =>
+            w is DropdownButtonFormField<String> &&
+            w.decoration.labelText == '本次对应哪个计划训练日（可选）',
+      );
+      await tester.tap(daySelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('周一').last);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field('重量 / kg')).controller!.text, '');
+      expect(tester.widget<TextField>(field('实际次数')).controller!.text, '');
+      await tester.ensureVisible(find.text('开始逐组训练与休息计时'));
+      await tester.tap(find.text('开始逐组训练与休息计时'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('75 kg × 5次'), findsOneWidget);
+      await tester.enterText(field('本组实际重量 / kg'), '40');
+      await tester.enterText(field('本组实际次数'), '6');
+      await tester.enterText(field('本组 RPE 1–10'), '8');
+      await tester.tap(find.text('确认本组并开始休息'));
+      await tester.pumpAndSettle();
+      expect(submitted, isNull);
+      await tester.tap(find.text('返回确认训练'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(field('重量 / kg')).controller!.text,
+        '40.0',
+      );
+      await tester.ensureVisible(find.text('完成训练并生成复盘'));
+      await tester.tap(find.text('完成训练并生成复盘'));
+      await tester.pumpAndSettle();
+      expect(submitted!['plan_id'], 'plan-1');
+      expect(submitted!['execution_id'], 'execution-1');
+      expect(submitted!['completed_plan_day'], false);
+      expect(submitted!['exercises'][0]['sets'][0]['weight_kg'], 40);
+      expect(submitted!['exercises'][0]['sets'][0]['reps'], 6);
+    },
+  );
+
+  testWidgets(
     'confirmed sets save once, review failure retains record and same-id retry survives navigation',
     (tester) async {
       await largeView(tester);

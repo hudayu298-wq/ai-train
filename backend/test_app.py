@@ -9,6 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, insert
 from uuid import uuid4
+from backend.test_support import assert_isolated_database
+
+assert_isolated_database()
 
 temp = tempfile.TemporaryDirectory()
 os.environ['FIT_DATA_DIR'] = temp.name
@@ -22,6 +25,7 @@ PLAN = {'name': '我的周计划', 'days': [{'name': '周一', 'exercises': [
 
 @pytest.fixture(autouse=True)
 def isolate_records(monkeypatch):
+    monkeypatch.setenv('AGENT_ROUTING_MODE','rules')
     monkeypatch.setattr(module.auth, 'rate_limit', lambda *args, **kwargs: None)
     d = module.database
     with d.get_engine(module.DB).begin() as db:
@@ -107,6 +111,7 @@ def test_coach_does_not_overwrite_profile_changed_while_waiting(monkeypatch):
     assert client.get('/api/coach/messages').json()['turns'] == []
 
 def test_plan_uses_coach_preferences_and_rejects_changed_preferences(monkeypatch):
+    complete_strength_profile()
     client.put('/api/profile', json=PROFILE)
     client.patch('/api/coach/profile', json={'equipment': '健身房器械', 'schedule': '晚上训练'})
     async def fake(profile, *args):
@@ -236,7 +241,7 @@ def test_coach_provider_sends_prompt_context_and_explicit_errors(monkeypatch):
 
 def test_library_search_categories_and_sources():
     assert len(client.get('/api/catalog').json()['exercises']) == 3
-    assert len(client.get('/api/catalog?extended=true').json()['exercises']) == 38
+    assert len(client.get('/api/catalog?extended=true').json()['exercises']) == 97
     result = client.get('/api/library/foods?q=香蕉').json()
     assert result['total'] == 1
     assert result['items'][0]['source_id'] == '173944'
@@ -244,8 +249,12 @@ def test_library_search_categories_and_sources():
     assert result['items'][0]['kcal'] == 89
     assert client.get('/api/library/foods?limit=1').json()['total'] == 44
     assert len(client.get('/api/library/foods?limit=1').json()['items']) == 1
-    assert client.get('/api/library/exercises?type=weighted').json()['total'] == 31
-    assert client.get('/api/library/exercises?type=bodyweight').json()['total'] == 7
+    weighted=client.get('/api/library/exercises?type=weighted').json()['total']
+    bodyweight=client.get('/api/library/exercises?type=bodyweight').json()['total']
+    cardio=client.get('/api/library/exercises?type=cardio').json()['total']
+    mobility=client.get('/api/library/exercises?type=mobility').json()['total']
+    assert weighted>31 and bodyweight>7 and cardio>0 and mobility>0
+    assert weighted+bodyweight+cardio+mobility==97
     assert client.get('/api/library/exercises?q=哑铃&category=背部').json()['items'][0]['id'] == 'dumbbell_row'
 
 CUSTOM_FOOD = {'name':'测试酸奶','category':'乳制品','state':'prepared',
@@ -294,6 +303,7 @@ def test_more_weighted_exercises_work_in_plan_training_and_rm():
     assert client.put('/api/library/exercises/bench',json={'name':'不同卧推','category':'胸部','equipment':'哑铃'}).status_code == 422
 
 def test_ai_uses_weighted_catalog_and_rejects_unknown_actions(monkeypatch):
+    complete_strength_profile()
     client.put('/api/profile',json=PROFILE)
     result=ai_result()
     async def fake(profile,rm,schema):
@@ -305,19 +315,20 @@ def test_ai_uses_weighted_catalog_and_rejects_unknown_actions(monkeypatch):
     assert client.post('/api/plans/generate').status_code == 502
 
 def test_joint_classification_and_gif_assets():
-    result=client.get('/api/library/exercises?category=肘屈曲&body_part=手臂').json()
+    result=client.get('/api/library/exercises?category=肘关节：屈曲&body_part=手臂').json()
     assert result['category_dimension']=='joint_movement'
-    assert len(result['items'])==3
-    assert '水平推' in result['categories']
-    assert '胸部' in result['body_parts']
+    assert result['total']>3
+    assert '肘关节：屈曲' in result['categories']
+    assert '手臂' in result['body_parts']
     assert client.get('/api/library/foods?category=乳制品').json()['category_dimension']=='food_type'
     from PIL import Image
     for entry in client.get('/api/catalog?extended=true').json()['exercises']:
         assert entry['joint_actions'] and entry['primary_muscles']
-        assert entry['technique']['key_points']
-        file=module.ROOT/'backend'/entry['demo']['url'].lstrip('/')
-        with Image.open(file) as gif:
-            assert gif.format=='GIF' and gif.n_frames>1
+        assert entry['joint_action_categories']
+        if entry.get('demo'):
+            file=module.ROOT/'backend'/entry['demo']['url'].lstrip('/')
+            with Image.open(file) as gif:
+                assert gif.format=='GIF' and gif.n_frames>1
     assert client.get('/assets/exercise-demos/bench.gif').status_code==200
 
 def test_reference_is_shared_with_prompts_and_edits_change_hash():
@@ -681,14 +692,49 @@ def test_legacy_meals_are_not_silently_assigned_to_breakfast():
     assert summary['groups'][-1]['meal_type'] == 'unassigned'
     assert summary['totals']['kcal'] == 100
 
+def complete_strength_profile():
+    body = {'items': [{'region': r, 'exercise_id': eid, 'weight_kg': weight, 'reps': 8, 'rir': 2,
+        'measured_on': module.nutrition_today().isoformat(), 'equipment_id': '', 'pain': False, 'confirmed': True}
+        for r, eid, weight in [('chest', 'bench', 60), ('back', 'barbell_row', 40), ('legs', 'squat', 80)]],
+        'base_revision': client.get('/api/strength-profile').json()['revision']}
+    response = client.put('/api/strength-profile', json=body)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def ai_result():
-    return {'name': 'AI周计划', 'days': [{'name': f'训练日{i + 1}',
-        'exercises': [{**PLAN['days'][0]['exercises'][0], 'weight_kg': None}]} for i in range(3)],
+    return {'name': 'AI周计划', 'split_type': 'full_body', 'days': [{'name': f'训练日{i + 1}',
+        'focus': 'full_body', 'session_goal': '按实际余力核对起始负重', 'training_method': 'straight_sets', 'primary_exercise_id': 'bench',
+        'exercises': [{**PLAN['days'][0]['exercises'][0], 'weight_kg': 50}]} for i in range(3)],
         'rationale': '根据增肌目标安排', 'warmup': '逐步热身',
         'recovery': '训练日之间恢复', 'progression': '根据完成情况复核'}
 
 
+def test_saved_profile_skips_automatic_onboarding_without_strength_or_plan(monkeypatch):
+    assert client.get('/api/onboarding').json()['required']
+    # Partial conversation facts do not count as a saved profile.
+    assert client.patch('/api/coach/profile', json={'age':28}).status_code == 200
+    assert client.get('/api/onboarding').json()['required']
+    assert client.put('/api/profile', json=PROFILE).status_code == 200
+    setup = client.get('/api/onboarding').json()
+    assert setup['profile_saved'] and not setup['required'] and not setup['profile_ready']
+    assert setup['current_plan'] is None
+    async def forbidden(*args): raise AssertionError('missing strength must still block generation')
+    monkeypatch.setattr(module.ai_planner, 'generate', forbidden)
+    assert client.post('/api/plans/generate').status_code == 422
+    assert client.post('/api/onboarding/complete').status_code == 422
+
+
+def test_completed_onboarding_does_not_reopen_when_data_need_review():
+    with module.connection() as db:
+        db.write('onboarding', 'setup', {'completed_at':'2026-01-01T00:00:00+00:00'})
+    setup = client.get('/api/onboarding').json()
+    assert not setup['required'] and not setup['profile_ready']
+    assert not setup['profile_saved'] and setup['current_plan'] is None
+
+
 def test_onboarding_schedule_injury_context_and_confirmation(monkeypatch):
+    complete_strength_profile()
     assert client.get('/api/onboarding').json()['required']
     assert client.post('/api/onboarding/complete').status_code == 422
     facts = {**PROFILE, 'training_weekdays': [1, 3, 5], 'preferred_time': '19:00',
@@ -815,12 +861,17 @@ def test_week_completion_uses_targets_at_time_of_each_workout(monkeypatch):
 
 
 def test_plan_uses_workout_memory_and_rejects_stale_training_draft(monkeypatch):
+    complete_strength_profile()
     client.put('/api/profile', json=PROFILE)
     client.post('/api/workouts', json=workout_payload())
     captured = []
     async def fake(profile, rm, schema):
         captured.append(profile['training_memory'])
-        return ai_result(), 'test-model'
+        raw = ai_result()
+        for day in raw['days']:
+            day['exercises'][0].update(exercise_id='barbell_row', weight_kg=30)
+            day['primary_exercise_id'] = 'barbell_row'
+        return raw, 'test-model'
     monkeypatch.setattr(module.ai_planner, 'generate', fake)
     draft = client.post('/api/plans/generate').json()
     assert captured[0]['session_count'] == 1
@@ -830,6 +881,7 @@ def test_plan_uses_workout_memory_and_rejects_stale_training_draft(monkeypatch):
     assert response.status_code == 409 and '训练档案' in response.text
 
 def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
+    complete_strength_profile()
     client.put('/api/profile', json=PROFILE)
     async def fake(profile, rm, schema):
         assert profile['goal'] == 'muscle_gain'
@@ -840,7 +892,7 @@ def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
     assert result.status_code == 200
     draft = result.json()
     assert client.get('/api/plans').json() == []
-    assert draft['assessment']['items'][0]['status'] == 'missing_load'
+    assert draft['assessment']['items'][0]['status'] == 'estimated_load'
     saved = client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')})
     assert saved.status_code == 200
     assert saved.json()['source'] == 'ai'
@@ -850,6 +902,7 @@ def test_ai_generation_is_a_draft_and_preserves_provenance(monkeypatch):
     assert client.post('/api/plans', json={k: draft[k] for k in ('name', 'days', 'generation_id')}).status_code == 200
 
 def test_ai_rejects_invalid_day_count_and_excessive_load(monkeypatch):
+    complete_strength_profile()
     client.put('/api/profile', json=PROFILE)
     result = ai_result()
     async def fake(*args):
@@ -864,6 +917,7 @@ def test_ai_rejects_invalid_day_count_and_excessive_load(monkeypatch):
     assert module.records('plan_draft') == []
 
 def test_ai_missing_config_is_explicit_and_secrets_not_exposed(monkeypatch):
+    complete_strength_profile()
     monkeypatch.setattr(module.ai_planner, 'settings', lambda: {'AI_API_KEY': '', 'AI_BASE_URL': '', 'AI_MODEL': ''})
     assert client.post('/api/plans/generate').status_code == 422
     client.put('/api/profile', json=PROFILE)

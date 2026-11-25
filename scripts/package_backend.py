@@ -10,7 +10,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parent.parent
 EXCLUDED = {'__pycache__', '.pytest_cache', '.git', '.venv', '.tools'}
 DIRECTORIES = ('backend', 'preview', 'deploy/linux')
-FILES = ('.env.example', 'alembic.ini', 'scripts/backup_data.py', 'scripts/send_mail.py', 'scripts/manage_account.py')
+FILES = ('.env.example', 'alembic.ini', 'scripts/backup_data.py', 'scripts/send_mail.py', 'scripts/manage_account.py', 'scripts/agent_worker.py', 'scripts/download_retrieval_models.py')
 
 
 def build_package(output_dir: Path) -> dict:

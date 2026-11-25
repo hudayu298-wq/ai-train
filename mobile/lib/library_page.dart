@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'exercise_reference.dart';
+import 'ui_theme.dart';
+import 'ui_components.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -28,6 +30,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   String get kind => widget.kind;
+  String language = 'zh';
   String category = '', type = '', bodyPart = '', cameraView = 'unknown';
   final query = TextEditingController();
   List<dynamic> entries = [], categories = [];
@@ -119,6 +122,7 @@ class _LibraryPageState extends State<LibraryPage> {
       final parameters = Uri(
         queryParameters: {
           'q': query.text,
+          if (kind == 'exercises') 'language': language,
           'category': category,
           'type': type,
           'body_part': bodyPart,
@@ -268,7 +272,12 @@ class _LibraryPageState extends State<LibraryPage> {
                                     'cooked': '熟食',
                                     'prepared': '成品 / 加工食品',
                                   }
-                                : {'weighted': '负重训练', 'bodyweight': '自重资料'})
+                                : {
+                                    'weighted': '负重训练',
+                                    'bodyweight': '自重资料',
+                                    'cardio': '有氧资料',
+                                    'mobility': '活动度与拉伸',
+                                  })
                             .entries
                             .map(
                               (e) => DropdownMenuItem(
@@ -472,14 +481,126 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Widget filterPanel() => LayoutBuilder(
+    builder: (context, box) {
+      final controls = <Widget>[
+        if (kind == 'exercises')
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            initialValue: language,
+            decoration: const InputDecoration(labelText: '动作资料语言'),
+            items: const [
+              DropdownMenuItem(value: 'zh', child: Text('中文（未审译文使用原资料）')),
+              DropdownMenuItem(value: 'en', child: Text('英文（未审译文使用原资料）')),
+            ],
+            onChanged: busy
+                ? null
+                : (v) {
+                    setState(() => language = v!);
+                    load();
+                  },
+          ),
+        DropdownButtonFormField<String>(
+          isExpanded: true,
+          key: ValueKey('$kind-$category-${categories.length}'),
+          initialValue: category,
+          decoration: InputDecoration(
+            labelText: kind == 'foods' ? '食物类型' : '关节动作分类',
+          ),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('全部分类')),
+            for (final c in categories)
+              DropdownMenuItem(value: c, child: Text(c)),
+          ],
+          onChanged: busy
+              ? null
+              : (v) {
+                  setState(() => category = v!);
+                  load();
+                },
+        ),
+        if (kind == 'exercises')
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            key: ValueKey('body-$bodyPart-${bodyParts.length}'),
+            initialValue: bodyPart,
+            decoration: const InputDecoration(labelText: '训练部位'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('全部部位')),
+              for (final part in bodyParts)
+                DropdownMenuItem(value: part, child: Text(part)),
+            ],
+            onChanged: busy
+                ? null
+                : (v) {
+                    setState(() => bodyPart = v!);
+                    load();
+                  },
+          ),
+        if (kind == 'exercises')
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            key: ValueKey(type),
+            initialValue: type,
+            decoration: const InputDecoration(labelText: '训练类型'),
+            items: const [
+              DropdownMenuItem(value: '', child: Text('全部')),
+              DropdownMenuItem(value: 'weighted', child: Text('负重训练')),
+              DropdownMenuItem(value: 'bodyweight', child: Text('自重资料')),
+              DropdownMenuItem(value: 'cardio', child: Text('有氧资料')),
+              DropdownMenuItem(value: 'mobility', child: Text('活动度与拉伸')),
+            ],
+            onChanged: busy
+                ? null
+                : (v) {
+                    setState(() => type = v!);
+                    load();
+                  },
+          ),
+      ];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: query,
+            onSubmitted: (_) => load(),
+            decoration: InputDecoration(
+              labelText: kind == 'foods' ? '搜索食物' : '搜索动作或器械',
+              suffixIcon: IconButton(
+                onPressed: busy ? null : () => load(),
+                icon: const Icon(Icons.search),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          if (box.maxWidth < 600)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('筛选与资料语言'),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: AdaptiveFields(children: controls),
+                ),
+              ],
+            )
+          else
+            AdaptiveFields(children: controls),
+          const SizedBox(height: 20),
+        ],
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(kind == 'foods' ? '食物库' : '动作库')),
     body: SingleChildScrollView(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 16 : 32),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: const BoxConstraints(maxWidth: 1040),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -488,69 +609,8 @@ class _LibraryPageState extends State<LibraryPage> {
                     ? '按食物类型分类，营养为每100克可食部分；请核对生熟状态、来源和实际品牌。'
                     : '按关节动作模式分类，并标明训练部位。新增动作不自动获得实时检测能力；动图为二维示意。',
               ),
-              TextField(
-                controller: query,
-                onSubmitted: (_) => load(),
-                decoration: InputDecoration(
-                  labelText: kind == 'foods' ? '搜索食物' : '搜索动作或器械',
-                  suffixIcon: IconButton(
-                    onPressed: busy ? null : () => load(),
-                    icon: const Icon(Icons.search),
-                  ),
-                ),
-              ),
-              DropdownButtonFormField<String>(
-                key: ValueKey('$kind-$category-${categories.length}'),
-                initialValue: category,
-                decoration: InputDecoration(
-                  labelText: kind == 'foods' ? '食物类型' : '关节动作分类',
-                ),
-                items: [
-                  const DropdownMenuItem(value: '', child: Text('全部分类')),
-                  for (final c in categories)
-                    DropdownMenuItem(value: c, child: Text(c)),
-                ],
-                onChanged: busy
-                    ? null
-                    : (v) {
-                        setState(() => category = v!);
-                        load();
-                      },
-              ),
-              if (kind == 'exercises')
-                DropdownButtonFormField<String>(
-                  key: ValueKey('body-$bodyPart-${bodyParts.length}'),
-                  initialValue: bodyPart,
-                  decoration: const InputDecoration(labelText: '训练部位'),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('全部部位')),
-                    for (final part in bodyParts)
-                      DropdownMenuItem(value: part, child: Text(part)),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (v) {
-                          setState(() => bodyPart = v!);
-                          load();
-                        },
-                ),
-              if (kind == 'exercises')
-                DropdownButtonFormField<String>(
-                  key: ValueKey(type),
-                  initialValue: type,
-                  decoration: const InputDecoration(labelText: '训练类型'),
-                  items: const [
-                    DropdownMenuItem(value: '', child: Text('全部')),
-                    DropdownMenuItem(value: 'weighted', child: Text('负重训练')),
-                    DropdownMenuItem(value: 'bodyweight', child: Text('自重资料')),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (v) {
-                          setState(() => type = v!);
-                          load();
-                        },
-                ),
+              const SizedBox(height: 20),
+              filterPanel(),
               Wrap(
                 spacing: 8,
                 children: [
@@ -594,14 +654,32 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
               if (busy) const LinearProgressIndicator(),
               if (message != null) Text(message!),
-              Text('共$total条 · 已显示${entries.length}条'),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '共 $total 条 · 已显示 ${entries.length} 条',
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+              ),
+              if (!busy && entries.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('没有找到匹配的条目，试试其他关键词或筛选条件。'),
+                ),
               for (final raw in entries) ...[
                 Builder(
                   builder: (context) {
                     final e = Map<String, dynamic>.from(raw);
                     return Card(
                       child: ExpansionTile(
-                        title: Text(e['name']),
+                        tilePadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        title: Text(
+                          e['name'],
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                         subtitle: Text(
                           kind == 'foods'
                               ? '${e['category']} · ${e['kcal']} kcal / 100g'
@@ -624,6 +702,8 @@ class _LibraryPageState extends State<LibraryPage> {
                                   if (e['original_name'] != null)
                                     Text('原始名称：${e['original_name']}'),
                                 ] else ...[
+                                  if (e['original_name'] != null)
+                                    Text('原始名称：${e['original_name']}'),
                                   ExerciseReference(
                                     exercise: e,
                                     assetBase: widget.assetBase,

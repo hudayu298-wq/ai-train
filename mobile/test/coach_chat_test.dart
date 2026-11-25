@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,92 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liftlab/auth/session.dart';
 
 void main() {
+  testWidgets(
+    'privacy refresh discards an in-flight reply and reloads history',
+    (tester) async {
+      final response = Completer<Map<String, dynamic>>();
+      var reads = 0;
+      Future<dynamic> request(String path, String method, Object? body) async {
+        if (path == '/coach/status') return {'configured': true};
+        if (method == 'GET') {
+          reads++;
+          return {'turns': <dynamic>[]};
+        }
+        return response.future;
+      }
+
+      Widget chat(int token) => MaterialApp(
+        home: Scaffold(
+          body: CoachChat(
+            refreshToken: token,
+            request: request,
+            onProfileChanged: () async {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat(0));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '待发送内容');
+      await tester.tap(find.byTooltip('发送消息'));
+      await tester.pump();
+      await tester.pumpWidget(chat(1));
+      await tester.pump();
+      response.complete({
+        'request_id': 'old',
+        'reply': '已删除来源的旧回复',
+        'user_message': '待发送内容',
+        'profile_changes': <dynamic>[],
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('已删除来源的旧回复'), findsNothing);
+      expect(reads, 2);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '待发送内容',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('late history response cannot undo privacy refresh', (
+    tester,
+  ) async {
+    final old = Completer<Map<String, dynamic>>();
+    var reads = 0;
+    Future<dynamic> request(String path, String method, Object? body) async {
+      if (path == '/coach/status') return {'configured': true};
+      if (++reads == 1) return old.future;
+      return {'turns': <dynamic>[]};
+    }
+
+    Widget chat(int token) => MaterialApp(
+      home: Scaffold(
+        body: CoachChat(
+          refreshToken: token,
+          request: request,
+          onProfileChanged: () async {},
+        ),
+      ),
+    );
+    await tester.pumpWidget(chat(0));
+    await tester.pump();
+    await tester.pumpWidget(chat(1));
+    await tester.pumpAndSettle();
+    old.complete({
+      'turns': [
+        {
+          'request_id': 'old',
+          'user_message': '旧问题',
+          'reply': '过期历史',
+          'profile_changes': <dynamic>[],
+        },
+      ],
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('过期历史'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('chat saves a turn and displays extracted evidence', (
     tester,
   ) async {
@@ -118,6 +205,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final sent = <Map<String, dynamic>>[];
+    var healthAi = true, historyReads = 0;
     await http.runWithClient(
       () async {
         FlutterSecureStorage.setMockInitialValues({});
@@ -163,6 +251,26 @@ void main() {
         await tester.pumpAndSettle();
         expect(sent.single['coach_id'], 'energetic');
         expect(sent.single['coach_name'], '小燃');
+        expect(find.text('先从一个小目标开始。'), findsOneWidget);
+        final beforePrivacyChange = historyReads;
+        await tester.tap(find.byTooltip('Open navigation menu'));
+        await tester.pumpAndSettle();
+        final healthEntry = find.widgetWithText(ListTile, '健康与恢复');
+        await tester.ensureVisible(healthEntry);
+        await tester.pumpAndSettle();
+        await tester.tap(healthEntry);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(ListTile, '授权与隐私'));
+        await tester.pumpAndSettle();
+        final healthSwitch = find.widgetWithText(SwitchListTile, '允许私教读取健康摘要');
+        await tester.ensureVisible(healthSwitch);
+        await tester.tap(healthSwitch);
+        await tester.pumpAndSettle();
+        expect(healthAi, isFalse);
+        expect(historyReads, greaterThan(beforePrivacyChange));
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.text('先从一个小目标开始。'), findsNothing);
         await tester.pumpWidget(
           const SizedBox(),
         ); // Dispose periodic nutrition timer.
@@ -195,6 +303,16 @@ void main() {
               'missing_fields': ['age'],
               'labels': {'age': '年龄'},
             };
+          case '/api/health-data/settings':
+            if (request.method == 'PUT') {
+              healthAi = jsonDecode(request.body)['ai_context_enabled'] == true;
+            }
+            body = {'storage_enabled': true, 'ai_context_enabled': healthAi};
+          case '/api/health-data/summary':
+            body = {};
+          case '/api/health-data/measurements':
+            body = {'items': []};
+          case '/api/agent/runs':
           case '/api/coach/messages':
             if (request.method == 'POST') {
               final input = Map<String, dynamic>.from(jsonDecode(request.body));
@@ -208,6 +326,7 @@ void main() {
                 'coach_name': input['coach_name'],
               };
             } else {
+              historyReads++;
               body = {'turns': []};
             }
           case '/api/coach/status':

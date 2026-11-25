@@ -1,6 +1,8 @@
 param([switch]$Foreground)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+try { & (Join-Path $PSScriptRoot 'scripts\start_redis.ps1') }
+catch { Write-Warning 'Local Redis startup failed; backend will use its database/file fallback.' }
 if (-not (Test-Path '.venv\Scripts\python.exe')) {
     throw '请先按 README 创建 Python 虚拟环境并安装后端依赖。'
 }

@@ -3,13 +3,15 @@ import json
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 try:
-    from . import exercise_content
+    from . import exercise_content, exercise_taxonomy, external_exercises, exercise_selection, catalog_content
 except ImportError:
     import exercise_content
+    import exercise_taxonomy, external_exercises, exercise_selection, catalog_content
 
 class FoodEntry(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
@@ -35,7 +37,7 @@ class ExerciseEntry(BaseModel):
     id: str | None = Field(default=None, pattern=r'^[a-z0-9_]+$', max_length=80)
     name: str = Field(min_length=1, max_length=100, pattern=r'.*\S.*')
     category: str = Field(min_length=1, max_length=40)
-    type: Literal['weighted', 'bodyweight'] = 'weighted'
+    type: Literal['weighted', 'bodyweight', 'cardio', 'mobility'] = 'weighted'
     equipment: str = Field(min_length=1, max_length=80)
     difficulty: Literal['beginner', 'intermediate', 'advanced'] = 'beginner'
     aliases: list[str] = Field(default_factory=list, max_length=15)
@@ -52,25 +54,36 @@ class ExerciseEntry(BaseModel):
 
 KINDS = {'foods': FoodEntry, 'exercises': ExerciseEntry}
 
+@lru_cache(maxsize=2)
+def seed_entries(kind):
+    entries=json.loads((Path(__file__).parent/'data'/f'{kind}.json').read_text(encoding='utf8'))
+    if kind=='exercises':
+        entries+=external_exercises.bundle()['items']
+    for entry in entries:
+        KINDS[kind].model_validate(entry)
+    return entries
+
+
 def initialize(connection):
     with connection() as db:
         for kind in KINDS:
-            entries = json.loads((Path(__file__).parent / 'data' / f'{kind}.json').read_text(encoding='utf-8'))
-            for order, entry in enumerate(entries):
-                KINDS[kind].model_validate(entry)
-                db.catalog_write(kind, entry, ignore=True, order=order)
+            db.catalog_seed(kind,seed_entries(kind))
 
-def all_entries(connection, kind):
+def all_entries(connection, kind, language="zh"):
     with connection() as db:
         entries = db.catalog_read(kind)
-    return [exercise_content.enrich(e) for e in entries] if kind == 'exercises' else entries
+        translations = catalog_content.published(db) if kind == 'exercises' else {}
+        if kind == 'foods': entries += db.records('external_food')
+    return [catalog_content.decorate(exercise_content.enrich(e), language, translations, catalog_content.fingerprint(e)) for e in entries] if kind == 'exercises' else entries
 
-def find_entry(connection, kind, entry_id):
+def find_entry(connection, kind, entry_id, language="zh"):
     with connection() as db:
         entry = db.catalog_read(kind, entry_id)
+        translations = catalog_content.published(db) if kind == 'exercises' else {}
+        if entry is None and kind == 'foods': entry = db.read('external_food', entry_id)
     if not entry:
         return None
-    return exercise_content.enrich(entry) if kind == 'exercises' else entry
+    return catalog_content.decorate(exercise_content.enrich(entry), language, translations, catalog_content.fingerprint(entry)) if kind == 'exercises' else entry
 
 def custom_payload(kind, entry, entry_id=None):
     payload = entry.model_dump(exclude={'id'}, exclude_none=True)
@@ -89,12 +102,18 @@ def router(connection):
     @routes.get('/{kind}')
     def search(kind: Literal['foods', 'exercises'], q: str = Query(default='', max_length=100),
                category: str = '', type: str = '', body_part: str = '', limit: int = Query(default=50, ge=1, le=200),
-               offset: int = Query(default=0, ge=0)):
-        entries = all_entries(connection, kind)
-        categories = sorted({e['movement_pattern'] if kind == 'exercises' else e['category'] for e in entries})
-        body_parts = sorted({part for e in entries for part in e.get('body_regions', [])})
+               offset: int = Query(default=0, ge=0), language: Literal['zh','en'] = 'zh'):
+        entries = all_entries(connection, kind, language)
+        if kind == 'exercises':
+            entries = [e for e in entries if exercise_selection.visible(e)]
+        def matches_category(e):
+            return not category or e['category']==category or e.get('movement_pattern')==category or category in exercise_taxonomy.categories(e)
+        scoped=[e for e in entries if not type or e.get('type')==type]
+        categories = sorted({label for e in scoped if not body_part or body_part in e.get('body_regions',[])
+            for label in (exercise_taxonomy.categories(e) if kind=='exercises' else [e['category']])})
+        body_parts = sorted({part for e in scoped if matches_category(e) for part in e.get('body_regions', [])})
         term = q.strip().casefold()
-        result = [e for e in entries if (not category or e['category'] == category or e.get('movement_pattern') == category)
+        result = [e for e in entries if matches_category(e)
                   and (not body_part or body_part in e.get('body_regions', []))
                   and (not type or e.get('type') == type)
                   and (not term or term in json.dumps([e['name'], e.get('aliases', []),
@@ -102,7 +121,8 @@ def router(connection):
                        e.get('primary_muscles', []), e.get('movement_pattern', '')], ensure_ascii=False).casefold())]
         return {'items': result[offset:offset + limit], 'total': len(result),
                 'limit': limit, 'offset': offset, 'categories': categories, 'body_parts': body_parts,
-                'category_dimension': 'joint_movement' if kind == 'exercises' else 'food_type'}
+                'category_dimension': 'joint_movement' if kind == 'exercises' else 'food_type',
+                'classification_note':'关节动作支持多选归属；外部分类为规则推断，尚未逐项专业审核。' if kind=='exercises' else None}
 
     @routes.get('/exercises/{entry_id}/analysis-context')
     def context(entry_id: str):
@@ -150,8 +170,8 @@ def router(connection):
         return payload
 
     @routes.get('/{kind}/{entry_id}')
-    def detail(kind: Literal['foods', 'exercises'], entry_id: str):
-        entry = find_entry(connection, kind, entry_id)
+    def detail(kind: Literal['foods', 'exercises'], entry_id: str, language: Literal['zh','en'] = 'zh'):
+        entry = find_entry(connection, kind, entry_id, language)
         if not entry:
             raise HTTPException(404, '条目不存在或已停用')
         return entry

@@ -43,14 +43,21 @@ def create_backup(data_dir: Path, backup_dir: Path, keep: int = 7) -> Path:
                 'PGUSER': unquote(parsed.username or ''), 'PGPASSWORD': unquote(parsed.password or ''),
                 'PGDATABASE': parsed.path.lstrip('/')}
             guard = psycopg.connect(host=env['PGHOST'], port=env['PGPORT'], user=env['PGUSER'],
-                password=env['PGPASSWORD'], dbname=env['PGDATABASE'])
-            # Prevent account deletion / private record commits while collecting files.
-            guard.execute('LOCK TABLE users IN SHARE MODE')
-            result = subprocess.run(['pg_dump', '--format=custom', '--no-owner', '--no-acl', '--file', str(snapshot)],
-                env=env, capture_output=True)
-            if result.returncode:
+                password=env['PGPASSWORD'], dbname=env['PGDATABASE'],connect_timeout=5)
+            # Private mutations use SELECT FOR UPDATE on users (ROW SHARE).
+            # EXCLUSIVE conflicts with that lock while allowing pg_dump reads;
+            # SHARE would allow those mutations during DB/media collection.
+            try:
+                guard.execute("SET LOCAL lock_timeout='15s'")
+                guard.execute('LOCK TABLE users IN EXCLUSIVE MODE')
+                result = subprocess.run(['pg_dump', '--format=custom', '--no-owner', '--no-acl', '--file', str(snapshot)],
+                    env=env, capture_output=True,timeout=120,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+                if result.returncode:
+                    raise RuntimeError('PostgreSQL backup failed; inspect database connectivity without logging credentials')
+            except Exception:
                 guard.close()
-                raise RuntimeError('PostgreSQL backup failed; inspect database connectivity without logging credentials')
+                raise
         else:
             with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as reader:
                 with closing(sqlite3.connect(snapshot)) as writer:

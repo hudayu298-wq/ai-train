@@ -59,6 +59,8 @@ install -d -m 0755 "$release_dir/scripts"
 install -m 0644 "$source_dir/scripts/backup_data.py" "$release_dir/scripts/backup_data.py"
 install -m 0644 "$source_dir/scripts/send_mail.py" "$release_dir/scripts/send_mail.py"
 install -m 0644 "$source_dir/scripts/manage_account.py" "$release_dir/scripts/manage_account.py"
+install -m 0644 "$source_dir/scripts/agent_worker.py" "$release_dir/scripts/agent_worker.py"
+install -m 0644 "$source_dir/scripts/download_retrieval_models.py" "$release_dir/scripts/download_retrieval_models.py"
 install -m 0644 "$source_dir/alembic.ini" "$release_dir/alembic.ini"
 install -m 0644 "$source_dir/RELEASE.json" "$release_dir/RELEASE.json"
 if [[ ! -f "$env_dir/liftlab.env" ]]; then
@@ -73,6 +75,7 @@ chown -hR root:liftlab "$release_dir"
 chmod -R u=rwX,g=rX,o= "$release_dir"
 
 previous="$(readlink -f "$base/current" 2>/dev/null || true)"
+systemctl stop liftlab-agent.timer liftlab-agent.service 2>/dev/null || true
 was_active=0
 systemctl is-active --quiet liftlab.service && was_active=1
 # Take a stable pre-deployment snapshot with the writer stopped.
@@ -124,17 +127,18 @@ runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d liftlab <<'SQL'
 GRANT CONNECT ON DATABASE liftlab TO liftlab_app;
 GRANT USAGE ON SCHEMA public TO liftlab_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO liftlab_app;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.alembic_version FROM liftlab_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO liftlab_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE liftlab_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO liftlab_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE liftlab_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO liftlab_app;
 SQL
-for name in liftlab.service liftlab-backup.service liftlab-backup.timer liftlab-mail.service liftlab-mail.timer; do
+for name in liftlab.service liftlab-backup.service liftlab-backup.timer liftlab-mail.service liftlab-mail.timer liftlab-agent.service liftlab-agent.timer; do
   install -m 0644 "$source_dir/deploy/linux/$name" "/etc/systemd/system/$name"
 done
 ln -s "$release_dir" "$base/current.next"
 mv -Tf "$base/current.next" "$base/current"
 systemctl daemon-reload
-systemctl enable liftlab.service liftlab-backup.timer liftlab-mail.timer
+systemctl enable liftlab.service liftlab-backup.timer liftlab-mail.timer liftlab-agent.timer
 if ! systemctl restart liftlab.service; then
   echo 'Service failed to start; the health check below will restore the previous release.' >&2
 fi
@@ -158,6 +162,7 @@ if [[ "$healthy" != 1 ]]; then
 fi
 systemctl start liftlab-backup.timer
 systemctl start liftlab-mail.timer
+systemctl start liftlab-agent.timer
 systemctl start liftlab-backup.service
 "$release_dir/.venv/bin/python" - <<'PY'
 import json

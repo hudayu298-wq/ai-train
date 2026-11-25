@@ -7,9 +7,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http_parser/http_parser.dart';
 
 import 'live/live_session.dart';
+import 'live/motion_replay_page.dart';
 import 'user_plan_editor.dart';
+import 'training_plan_overview.dart';
 import 'profile_setup.dart';
+import 'regional_strength_profile.dart';
 import 'fitness_onboarding.dart';
+import 'training_tools_page.dart';
 import 'library_page.dart';
 import 'coach_chat.dart';
 import 'coach_avatar.dart';
@@ -19,10 +23,16 @@ import 'reminders/reminder_settings.dart';
 import 'coaches/coach_picker.dart';
 import 'coaches/coach_persona.dart';
 import 'ui_theme.dart';
+import 'ui_components.dart';
 import 'workout_log.dart';
 import 'auth/session.dart';
 import 'auth/auth_gate.dart';
 import 'auth/account_page.dart';
+import 'health_data_page.dart';
+import 'research_page.dart';
+import 'knowledge_page.dart';
+import 'nutrition_guidance_page.dart';
+import 'mobility_page.dart';
 
 class LiftLab extends StatelessWidget {
   const LiftLab({super.key});
@@ -42,6 +52,8 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> with WidgetsBindingObserver {
+  final shellKey = GlobalKey<ScaffoldState>();
+  final strengthKey = GlobalKey<RegionalStrengthProfileState>();
   int tab = 0;
   bool busy = false;
   String? error;
@@ -53,11 +65,13 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Map<String, dynamic>? coachProfile;
   bool onboardingChecked = false;
   int chatRefreshToken = 0;
+  int privateViewEpoch = 0;
   int petReminderRevision = 0;
   String? petReminderText;
   Timer? nutritionTimer;
   late final coachReminders = CoachReminders(ownerId: authSession.user?['id']);
   String mealType = 'breakfast';
+  String portionSource = 'unknown';
   static const mealTypes = {
     'breakfast': '早餐',
     'lunch': '午餐',
@@ -160,18 +174,21 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> refreshNutrition() async {
+    final epoch = privateViewEpoch;
     try {
       final result = Map<String, dynamic>.from(
         await request('/nutrition/today'),
       );
-      if (mounted) {
+      if (mounted && epoch == privateViewEpoch) {
         setState(() {
           nutrition = result;
           meals = result['records'];
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '当天饮食刷新失败：$e');
+      if (mounted && epoch == privateViewEpoch) {
+        setState(() => error = '当天饮食刷新失败：$e');
+      }
     }
   }
 
@@ -215,6 +232,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 Duration(
                   seconds:
                       path == '/plans/generate' ||
+                          path.startsWith('/agent/runs') ||
                           path == '/movement/analyze' ||
                           path == '/coach/messages' ||
                           path.endsWith('/review') ||
@@ -227,6 +245,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           Duration(
             seconds:
                 path == '/plans/generate' ||
+                    path.startsWith('/agent/runs') ||
                     path == '/movement/analyze' ||
                     path == '/coach/messages' ||
                     path.endsWith('/review') ||
@@ -239,6 +258,36 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     if (response.statusCode >= 400) {
       throw Exception(
         result['detail'] is String ? result['detail'] : '输入不符合要求，请检查数值范围',
+      );
+    }
+    final privateMutation =
+        (method == 'DELETE' &&
+            RegExp(r'^/(health-data|mobility|workouts|training|meals)(/|$)')
+                .hasMatch(path)) ||
+        ((method == 'PUT' || method == 'POST') &&
+            (path.startsWith('/health-data/') ||
+                path.startsWith('/mobility/') ||
+                path == '/nutrition-guidance/settings'));
+    if (mounted && privateMutation) {
+      setState(() {
+        privateViewEpoch++;
+        chatRefreshToken++;
+        plans = [];
+        training = [];
+        workouts = [];
+        meals = [];
+        nutrition = null;
+        if (coachProfile != null) {
+          coachProfile = {
+            ...coachProfile!,
+            'training_memory': <String, dynamic>{},
+          };
+        }
+      });
+      unawaited(
+        refresh().catchError((Object e) {
+          if (mounted) setState(() => error = '资料已更新，页面刷新失败：$e');
+        }),
       );
     }
     return result;
@@ -306,8 +355,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> loadCoachProfile() async {
+    final epoch = privateViewEpoch;
     final result = Map<String, dynamic>.from(await request('/coach/profile'));
-    if (!mounted) return;
+    if (!mounted || epoch != privateViewEpoch) return;
     final p = result['facts'] as Map;
     setState(() {
       coachProfile = result;
@@ -337,6 +387,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> refresh() async {
+    final epoch = privateViewEpoch;
     final result = await Future.wait([
       request('/plans'),
       request('/training'),
@@ -344,8 +395,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       request('/media'),
       request('/rm'),
       request('/workouts'),
+      request('/coach/profile'),
     ]);
-    if (!mounted) return;
+    if (!mounted || epoch != privateViewEpoch) return;
     setState(() {
       plans = result[0];
       training = result[1];
@@ -354,6 +406,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       media = result[3];
       rmRecords = result[4];
       workouts = result[5] is Map ? (result[5]['items'] as List? ?? []) : [];
+      coachProfile = Map<String, dynamic>.from(result[6]);
     });
   }
 
@@ -468,12 +521,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   Widget panel(String title, List<Widget> children) => Card(
     margin: const EdgeInsets.only(bottom: 16),
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
+          Semantics(
+            header: true,
+            child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+          ),
+          const SizedBox(height: 16),
           ...children,
         ],
       ),
@@ -495,15 +551,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
 
   Widget planPanel() {
     if (plans.isEmpty) {
-      return panel('我的训练计划', [const Text('先通过私教对话或“我”补齐画像，再生成 AI 计划并确认保存。')]);
+      return panel('我的训练计划', [
+        const Text('还没有启用的训练计划。'),
+        const SizedBox(height: 8),
+        const Text(
+          '补齐画像后生成 AI 草稿，核对训练日与负荷，确认后才会启用。',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      ]);
     }
     final p = plans.first;
     return panel('我的计划 · ${p['name']}', [
-      Text(p['note']),
       Text(
-        '当前版本 ${p['version'] ?? 1} · 第${p['cycle_week'] ?? 1}/${p['cycle_weeks'] ?? 4}周 · 每周${(p['days'] as List).length}次',
+        '第 ${p['cycle_week'] ?? 1} / ${p['cycle_weeks'] ?? 4} 周 · 每周 ${(p['days'] as List).length} 次 · 版本 ${p['version'] ?? 1}',
+        style: const TextStyle(color: AppColors.muted),
       ),
-      if (p['cycle_complete'] == true) const Text('本周期已完成，可根据最新画像生成下一周期。'),
+      if (p['cycle_complete'] == true)
+        const Padding(
+          padding: EdgeInsets.only(top: 12),
+          child: Text('本周期已完成，可根据最新画像生成下一周期。'),
+        ),
       if (p['latest_change'] != null)
         PlanChangeCard(
           event: Map<String, dynamic>.from(p['latest_change']),
@@ -516,50 +583,53 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             await refresh();
           }),
         ),
-      for (final week in p['weeks'] ?? []) Text('$week'),
-      for (final warning in p['risk_warnings'] ?? []) Text('风险提示：$warning'),
-      if (p['rationale'] != null) ...[
-        Text('制定理由：${p['rationale']}'),
-        Text('热身：${p['warmup']}'),
-        Text('恢复：${p['recovery']}'),
-        Text('调整建议：${p['progression']}'),
-      ],
-      const SizedBox(height: 12),
-      ...[
-        for (final d in p['days'])
-          Padding(
-            padding: const EdgeInsets.only(top: 18),
+      for (final warning in p['risk_warnings'] ?? [])
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text('风险提示：$warning'),
+        ),
+      const SizedBox(height: 16),
+      TrainingPlanOverview(
+        plan: Map<String, dynamic>.from(p),
+        exercises: exercises,
+        showHeader: false,
+      ),
+      ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: const Text('制定依据与训练建议'),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${d['name']}${d['start_time'] == null ? '' : ' · ${d['start_time']}'}${d['duration_minutes'] == null ? '' : ' · ${d['duration_minutes']}分钟'}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                ...[
-                  for (final e in d['exercises'])
-                    Text(
-                      '${e['name']} · ${e['weight_kg'] == null ? '重量待确认' : '${e['weight_kg']} kg'} · ${e['sets']} × ${e['reps']} · 休息 ${e['rest_seconds']} 秒',
-                    ),
+                if (p['note'] != null) Text('${p['note']}'),
+                for (final week in p['weeks'] ?? []) Text('$week'),
+                if (p['rationale'] != null) ...[
+                  Text('制定理由：${p['rationale']}'),
+                  Text('热身：${p['warmup']}'),
+                  Text('恢复：${p['recovery']}'),
+                  Text('调整建议：${p['progression']}'),
                 ],
+                for (final item in p['assessment']?['items'] ?? [])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      '${item['day']} · ${exercises[item['exercise_id']] ?? item['exercise_id']}：${item['load_percent'] == null ? '暂无RM评估' : '${item['load_percent']}% 1RM参考'}\n${item['message']}${item['risk_warning'] == null ? '' : '\n风险提示：${item['risk_warning']}'}',
+                    ),
+                  ),
               ],
             ),
           ),
-      ],
-      for (final item in p['assessment']['items'])
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Text(
-            '${item['day']} · ${exercises[item['exercise_id']]}：${item['load_percent'] == null ? '暂无RM评估' : '${item['load_percent']}% 1RM参考'}\n${item['message']}${item['risk_warning'] == null ? '' : '\n风险提示：${item['risk_warning']}'}',
-          ),
-        ),
+        ],
+      ),
     ]);
   }
 
   Widget profilePage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panel('我的用户画像', [
-        trainingMemoryPanel(),
         TextButton.icon(
           onPressed: openOnboarding,
           icon: const Icon(Icons.auto_awesome),
@@ -569,6 +639,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           ProfileSetup(
             key: ValueKey(jsonEncode(coachProfile!['facts'])),
             facts: Map<String, dynamic>.from(coachProfile!['facts']),
+            strength: RegionalStrengthProfile(
+              key: strengthKey,
+              request: (p, m, b) => request(p, method: m, body: b),
+            ),
+            beforeSave: () async {
+              final form = strengthKey.currentState;
+              if (form == null) throw Exception('请等待力量评估表单加载完成');
+              await form.saveRequired();
+            },
             request: (path, method, body) =>
                 request(path, method: method, body: body),
             onSaved: () async {
@@ -578,15 +657,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             },
           ),
       ]),
-      StrengthProfile(
-        request: (path, method, body) =>
-            request(path, method: method, body: body),
-        exercises: exercises,
-        records: rmRecords,
-        onSaved: () async {
-          await loadCoachProfile();
-          await refresh();
-        },
+      ExpansionTile(
+        title: const Text('已有RM（可选）'),
+        maintainState: true,
+        children: [
+          StrengthProfile(
+            request: (path, method, body) =>
+                request(path, method: method, body: body),
+            exercises: exercises,
+            records: rmRecords,
+            onSaved: () async {
+              await loadCoachProfile();
+              await refresh();
+            },
+          ),
+        ],
+      ),
+      ExpansionTile(
+        title: const Text('已确认的训练档案'),
+        maintainState: true,
+        children: [trainingMemoryPanel()],
       ),
     ],
   );
@@ -649,6 +739,17 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                   : '累计 $count 条训练记录 · 近28天训练 ${memory?['training_days_last_28']} 天',
             ),
             if (count > 0) ...[
+              if (memory?['last_28_days'] is Map) ...[
+                Text(
+                  '近28天：${memory!['last_28_days']['sessions']}次记录 · ${memory['last_28_days']['working_sets']}个工作组',
+                ),
+                for (final e in (memory['last_28_days']['by_exercise'] as List))
+                  Text(
+                    '${e['name']} · ${e['working_sets']}组 / ${e['reps']}次 · ${e['volume_kg']} kg·次'
+                    ' · ${e['weight_basis']} · 器械${e['equipment_id'] == '' ? '未注明' : e['equipment_id']}',
+                  ),
+                Text(memory['last_28_days']['note']),
+              ],
               Text(
                 '最近训练：${memory?['last_training_day']} · 累计 ${memory?['total_sets']} 组',
               ),
@@ -671,13 +772,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Widget trainingPage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      PageIntro(
+        title: '把计划变成每一次训练',
+        description: '先确认计划，再记录实际完成的组次。每次调整都有依据，也可以撤销。',
+        action: plans.isEmpty
+            ? null
+            : FilledButton.icon(
+                onPressed: () => openWorkoutLog(),
+                icon: const Icon(Icons.play_arrow_outlined),
+                label: const Text('记录本次训练'),
+              ),
+      ),
       planPanel(),
       UserPlanEditor(
         key: ValueKey(
           'current-plan-${plans.isEmpty ? 'none' : plans.first['id']}',
         ),
         compact: true,
+        onCompleteProfile: () => setState(() => tab = 1),
         post: (path, body) => request(path, method: 'POST', body: body),
         onSaved: refresh,
         exercises: exercises,
@@ -695,6 +809,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   );
 
   Widget historyPage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panel('训练记录与复盘', [
         const Text('每次训练完成后确认实际组次与感受，私教会据此了解你的表现并给出下次建议。'),
@@ -760,16 +875,11 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     ],
   );
   Widget nutritionPage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panel('当天营养 · ${nutrition?['day'] ?? ''}', [
         const Text('按北京时间计算当天摄入，营养目标根据当前画像估算。'),
-        if (nutrition?['target_status'] != 'ready')
-          Text(
-            nutrition?['target_status'] == 'stale'
-                ? '请刷新以更新营养目标。'
-                : '先保存画像，才能估算每日营养目标。',
-          ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, box) => Wrap(
             spacing: 12,
@@ -782,11 +892,57 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 'carbs': '碳水',
               }.entries)
                 SizedBox(
-                  width: (box.maxWidth - 12) / 2,
+                  width: box.maxWidth < 300
+                      ? box.maxWidth
+                      : box.maxWidth < 700
+                      ? (box.maxWidth - 12) / 2
+                      : (box.maxWidth - 36) / 4,
                   child: nutrientProgress(entry.key, entry.value),
                 ),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+        select(
+          '今天记录完整度',
+          nutrition?['diary']?['status'] ?? 'unknown',
+          {'unknown': '未确认', 'partial': '只记录了一部分', 'complete': '今天已全部记录'},
+          (v) {
+            perform(() async {
+              await request(
+                '/nutrition/diary',
+                method: 'PUT',
+                body: {'status': v, 'notes': ''},
+              );
+              await refresh();
+            });
+          },
+        ),
+        Text(nutrition?['interpretation'] ?? '未确认完整度时，不能据此判断全天摄入不足。'),
+        if (nutrition?['target_status'] != 'ready')
+          Text(
+            nutrition?['target_status'] == 'stale'
+                ? '请刷新以更新营养目标。'
+                : nutrition?['target_status'] == 'needs_review'
+                ? '请查看营养目标设置与适用情况，当前资料不适合自动估算。'
+                : '先保存画像，才能估算每日营养目标。',
+          ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => NutritionGuidancePage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                ),
+              ),
+            );
+            if (mounted) {
+              await refresh();
+            }
+          },
+          icon: const Icon(Icons.tune),
+          label: const Text('营养目标与依据'),
         ),
       ]),
       panel('记录当天这一餐', [
@@ -801,6 +957,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           for (final f in catalog?['foods'] ?? []) '${f['id']}': '${f['name']}',
         }, (v) => food = v),
         field('可食重量 / g', grams),
+        select('份量来源', portionSource, {
+          'unknown': '未注明',
+          'weighed': '厨房秤称重',
+          'estimated': '自行估算',
+          'label': '包装标签',
+        }, (v) => portionSource = v),
         action('保存饮食', () async {
           await request(
             '/meals',
@@ -809,6 +971,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               'food_id': food,
               'grams': number(grams),
               'meal_type': mealType,
+              'portion_source': portionSource,
             },
           );
           await refresh();
@@ -853,8 +1016,8 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xfff8f9fc),
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.soft,
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -866,11 +1029,14 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
           const SizedBox(height: 4),
           Text(
             '${metric['consumed']} $unit',
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: 24,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
           ),
           Text(
             target == null ? '目标待设置' : '目标 $target $unit',
-            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+            style: const TextStyle(fontSize: 12, color: AppColors.muted),
           ),
           const SizedBox(height: 6),
           if (target != null) ...[
@@ -884,7 +1050,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               excess > 0
                   ? '超出目标 $excess $unit'
                   : '距目标还差 ${metric['remaining']} $unit',
-              style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
             ),
           ],
         ],
@@ -893,6 +1059,7 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Widget analysisPage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panel('动作分类与动作库', [
         const Text('按关节动作和训练部位查找，查看示范与要点。'),
@@ -940,7 +1107,18 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 ),
         ),
         const SizedBox(height: 12),
-        const Text('实时姿态检测支持 Android / iOS；Web 展示拍摄引导。计次和节奏规则仍需真机与教练验证。'),
+        OutlinedButton.icon(
+          onPressed: liveExercise.isEmpty
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MotionReplayPage(exerciseId: liveExercise),
+                  ),
+                ),
+          icon: const Icon(Icons.fact_check_outlined),
+          label: const Text('证据回放与双人标注'),
+        ),
+        const Text('实时姿态检测支持 Android / iOS；Web 可运行本地证据回放。计次和节奏规则仍需真机与教练验证。'),
         const Text('请采取保护措施，不要为了录像尝试更大重量。'),
         action('上传训练录像', () => upload('video', exerciseId: liveExercise)),
         const Text('支持 MP4/MOV，最大100MB。'),
@@ -1009,8 +1187,14 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   ];
 
   void navigate(int destination) {
-    Navigator.of(context).pop();
+    closeNavigation();
     setState(() => tab = destination);
+  }
+
+  void closeNavigation() {
+    if (shellKey.currentState?.isDrawerOpen == true) {
+      shellKey.currentState!.closeDrawer();
+    }
   }
 
   Future<void> showCoachPrompt({String? coachId}) => perform(() async {
@@ -1072,62 +1256,316 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     );
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(pageTitles[tab]),
-      actions: [
-        IconButton(
-          onPressed: chooseCoach,
-          tooltip: '切换桌宠教练',
-          icon: const Icon(Icons.groups_outlined),
-        ),
-        if (tab == 2 || tab == 3 || tab == 4)
-          IconButton(
-            onPressed: () =>
-                openLibrary(kind: tab == 3 ? 'foods' : 'exercises'),
-            tooltip: tab == 3 ? '食物库' : '动作库',
-            icon: Icon(tab == 3 ? Icons.restaurant_menu : Icons.fitness_center),
+  Widget navigationPanel() => SafeArea(
+    child: ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+          child: Row(
+            children: [
+              CoachAvatar(size: 40, coachId: coachReminders.settings.coachId),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '练伴',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${coachReminders.settings.coachName} · ${personaFor(coachReminders.settings.coachId).style}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        IconButton(
+        ),
+        for (final item in const [
+          (0, Icons.chat_bubble_outline, 'AI 私教'),
+          (3, Icons.restaurant_outlined, '饮食'),
+          (2, Icons.fitness_center, '训练计划'),
+          (6, Icons.history, '训练记录与复盘'),
+          (4, Icons.videocam_outlined, 'AI 陪训'),
+          (1, Icons.person_outline, '我'),
+          (5, Icons.notifications_outlined, '私教提醒'),
+        ])
+          ListTile(
+            leading: Icon(item.$2, size: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+            title: Text(item.$3),
+            selected: tab == item.$1,
+            selectedTileColor: AppColors.selected,
+            onTap: () => navigate(item.$1),
+          ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 28, 16, 12),
+          child: Text(
+            '工具与资料',
+            style: TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.insights),
+          title: const Text('训练工具与资料'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => TrainingToolsPage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                  admin: authSession.user?['role'] == 'admin',
+                ),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.accessibility_new_outlined),
+          title: const Text('活动度测量'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => MobilityPage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                ),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.monitor_heart_outlined),
+          title: const Text('健康与恢复'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => HealthDataPage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                ),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.menu_book_outlined),
+          title: const Text('健身知识库'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => KnowledgePage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                  admin: authSession.user?['role'] == 'admin',
+                ),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.science_outlined),
+          title: const Text('研究与私教改进'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ResearchPage(
+                  request: (p, m, b) => request(p, method: m, body: b),
+                  admin: authSession.user?['role'] == 'admin',
+                ),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.manage_accounts_outlined),
+          title: const Text('账号与安全'),
+          onTap: () {
+            closeNavigation();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AccountPage()),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('私教提示词'),
+          onTap: () {
+            closeNavigation();
+            showCoachPrompt();
+          },
+        ),
+        const SizedBox(height: 16),
+      ],
+    ),
+  );
+
+  List<Widget> headerActions() => [
+    IconButton(
+      onPressed: chooseCoach,
+      tooltip: '切换桌宠教练',
+      icon: const Icon(Icons.groups_outlined, size: 22),
+    ),
+    if (tab == 2 || tab == 3 || tab == 4)
+      IconButton(
+        onPressed: () => openLibrary(kind: tab == 3 ? 'foods' : 'exercises'),
+        tooltip: tab == 3 ? '食物库' : '动作库',
+        icon: Icon(
+          tab == 3 ? Icons.restaurant_menu : Icons.fitness_center,
+          size: 22,
+        ),
+      ),
+    IconButton(
+      onPressed: busy ? null : initialize,
+      tooltip: '刷新数据',
+      icon: const Icon(Icons.refresh, size: 22),
+    ),
+    const SizedBox(width: 8),
+  ];
+
+  Widget desktopHeader() => Padding(
+    padding: const EdgeInsets.fromLTRB(32, 28, 24, 12),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  pageTitles[tab],
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '练伴 · 我的训练空间',
+                style: TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
+        ...headerActions(),
+      ],
+    ),
+  );
+
+  Widget connectionState() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 32),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          busy ? '正在加载你的训练空间' : '暂时无法加载训练资料',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 12),
+        const Text('请检查服务连接后重试，已保存的记录会在连接恢复后显示。'),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
           onPressed: busy ? null : initialize,
           icon: const Icon(Icons.refresh),
+          label: const Text('重新加载'),
         ),
       ],
     ),
-    drawer: Drawer(
-      child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+  );
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      // The 240px nav folds below 1100px; canvas has equal 32px gutters.
+      final wide = box.maxWidth >= 1100;
+      return Scaffold(
+        key: shellKey,
+        appBar: wide
+            ? null
+            : AppBar(title: Text(pageTitles[tab]), actions: headerActions()),
+        drawer: wide ? null : Drawer(child: navigationPanel()),
+        body: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-              child: Row(
+            if (wide) SizedBox(width: 240, child: navigationPanel()),
+            Expanded(
+              child: Column(
                 children: [
-                  CoachAvatar(
-                    size: 52,
-                    coachId: coachReminders.settings.coachId,
-                  ),
-                  const SizedBox(width: 12),
+                  if (wide) desktopHeader(),
+                  if (busy) const LinearProgressIndicator(),
+                  if (error != null)
+                    MaterialBanner(
+                      content: Text(error!),
+                      actions: [
+                        TextButton(
+                          onPressed: () => setState(() => error = null),
+                          child: const Text('关闭'),
+                        ),
+                      ],
+                    ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: IndexedStack(
+                      index: tab,
                       children: [
-                        const Text(
-                          '练伴',
-                          style: TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -.5,
+                        TickerMode(
+                          enabled: tab == 0,
+                          child: CoachChat(
+                            request: (path, method, body) =>
+                                request(path, method: method, body: body),
+                            onProfileChanged: profileFromChat,
+                            refreshToken: chatRefreshToken,
+                            coachName: coachReminders.settings.coachName,
+                            coachId: coachReminders.settings.coachId,
+                            onChooseCoach: chooseCoach,
+                            reminderText: petReminderText,
+                            reminderRevision: petReminderRevision,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${coachReminders.settings.coachName} · ${personaFor(coachReminders.settings.coachId).style}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.muted,
+                        for (final page in [
+                          profilePage,
+                          trainingPage,
+                          nutritionPage,
+                          analysisPage,
+                        ])
+                          AppContent(
+                            maxWidth: page == profilePage ? 800 : 1040,
+                            child: catalog == null ? connectionState() : page(),
                           ),
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 760),
+                              child: ReminderPage(
+                                service: coachReminders,
+                                sync: syncReminderSettings,
+                                onChooseCoach: chooseCoach,
+                                readSaved: () async =>
+                                    ReminderSettings.fromJson(
+                                      Map<String, dynamic>.from(
+                                        await request('/coach/reminders'),
+                                      ),
+                                    ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        AppContent(
+                          child: catalog == null
+                              ? connectionState()
+                              : historyPage(),
                         ),
                       ],
                     ),
@@ -1135,120 +1573,9 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            for (final item in const [
-              (0, Icons.chat_bubble_outline, 'AI 私教'),
-              (3, Icons.restaurant_outlined, '饮食'),
-              (2, Icons.fitness_center, '训练计划'),
-              (6, Icons.history, '训练记录与复盘'),
-              (4, Icons.videocam_outlined, 'AI 陪训'),
-              (1, Icons.person_outline, '我'),
-              (5, Icons.notifications_outlined, '私教提醒'),
-            ])
-              ListTile(
-                leading: Icon(item.$2),
-                title: Text(item.$3),
-                selected: tab == item.$1,
-                selectedTileColor: AppColors.selected,
-                onTap: () => navigate(item.$1),
-              ),
-            const Divider(height: 32),
-            ListTile(
-              leading: const Icon(Icons.manage_accounts_outlined),
-              title: const Text('账号与安全'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const AccountPage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: const Text('私教提示词'),
-              onTap: () {
-                Navigator.of(context).pop();
-                showCoachPrompt();
-              },
-            ),
-            const SizedBox(height: 16),
           ],
         ),
-      ),
-    ),
-    body: Column(
-      children: [
-        if (busy) const LinearProgressIndicator(),
-        if (error != null)
-          MaterialBanner(
-            content: Text(error!),
-            actions: [
-              TextButton(
-                onPressed: () => setState(() => error = null),
-                child: const Text('关闭'),
-              ),
-            ],
-          ),
-        Expanded(
-          child: IndexedStack(
-            index: tab,
-            children: [
-              TickerMode(
-                enabled: tab == 0,
-                child: CoachChat(
-                  request: (path, method, body) =>
-                      request(path, method: method, body: body),
-                  onProfileChanged: profileFromChat,
-                  refreshToken: chatRefreshToken,
-                  coachName: coachReminders.settings.coachName,
-                  coachId: coachReminders.settings.coachId,
-                  onChooseCoach: chooseCoach,
-                  reminderText: petReminderText,
-                  reminderRevision: petReminderRevision,
-                ),
-              ),
-              for (final page in [
-                profilePage,
-                trainingPage,
-                nutritionPage,
-                analysisPage,
-              ])
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: catalog == null
-                          ? const Text('连接服务中；连接失败时请启动后端并点击刷新。')
-                          : page(),
-                    ),
-                  ),
-                ),
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
-                    child: ReminderPage(
-                      service: coachReminders,
-                      sync: syncReminderSettings,
-                      onChooseCoach: chooseCoach,
-                      readSaved: () async => ReminderSettings.fromJson(
-                        Map<String, dynamic>.from(
-                          await request('/coach/reminders'),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: catalog == null ? const Text('连接服务中…') : historyPage(),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
+      );
+    },
   );
 }
